@@ -1,4 +1,4 @@
-/*	$OpenBSD: timer.c,v 1.13 2009/01/21 20:32:53 henning Exp $ */
+/*	$OpenBSD: timer.c,v 1.12.2.1 2009/02/20 07:20:15 henning Exp $ */
 
 /*
  * Copyright (c) 2003-2007 Henning Brauer <henning@openbsd.org>
