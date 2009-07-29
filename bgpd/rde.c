@@ -2457,14 +2457,14 @@ peer_localaddrs(struct rde_peer *peer, struct bgpd_addr *laddr)
 		fatal("getifaddrs");
 
 	for (match = ifap; match != NULL; match = match->ifa_next)
-		if (sa_cmp(laddr, match->ifa_addr) == 0)
+		if (match->ifa_addr && sa_cmp(laddr, match->ifa_addr) == 0)
 			break;
 
 	if (match == NULL)
 		fatalx("peer_localaddrs: local address not found");
 
 	for (ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
-		if (ifa->ifa_addr->sa_family == AF_INET &&
+		if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET &&
 		    strcmp(ifa->ifa_name, match->ifa_name) == 0) {
 			if (ifa->ifa_addr->sa_family ==
 			    match->ifa_addr->sa_family)
@@ -2478,7 +2478,7 @@ peer_localaddrs(struct rde_peer *peer, struct bgpd_addr *laddr)
 	}
 
 	for (ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
-		if (ifa->ifa_addr->sa_family == AF_INET6 &&
+		if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET6 &&
 		    strcmp(ifa->ifa_name, match->ifa_name) == 0) {
 			/*
 			 * only accept global scope addresses except explicitly
