@@ -27,6 +27,9 @@
 #include <unistd.h>
 
 #include "bgpd.h"
+#include "sys-queue.h"
+#include "includes.h"
+#include "config.h"
 
 void	buf_enqueue(struct msgbuf *, struct buf *);
 void	buf_dequeue(struct msgbuf *, struct buf *);
