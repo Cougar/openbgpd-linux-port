@@ -457,6 +457,8 @@ struct ctl_neighbor {
 	int			show_timers;
 };
 
+#define	RTLABEL_LEN	32	// from <net/route.h>
+
 struct kroute_label {
 	struct kroute	kr;
 	char		label[RTLABEL_LEN];
