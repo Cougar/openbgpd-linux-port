@@ -1,4 +1,4 @@
-/*	$OpenBSD: parser.c,v 1.8 2004/08/20 15:49:35 henning Exp $ */
+/*	$OpenBSD: parser.c,v 1.12 2004/12/23 17:55:59 henning Exp $ */
 
 /*
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
@@ -33,7 +33,8 @@ enum token_type {
 	FLAG,
 	ASNUM,
 	ASTYPE,
-	PREFIX
+	PREFIX,
+	PEERDESC
 };
 
 struct token {
@@ -103,6 +104,7 @@ static const struct token t_show_rib[] = {
 static const struct token t_show_neighbor[] = {
 	{ NOTOKEN,	"",		NONE,	NULL},
 	{ ADDRESS,	"",		NONE,	t_show_neighbor_modifiers},
+	{ PEERDESC,	"",		NONE,	t_show_neighbor_modifiers},
 	{ ENDTOKEN,	"",		NONE,	NULL}
 };
 
@@ -121,6 +123,7 @@ static const struct token t_fib[] = {
 
 static const struct token t_neighbor[] = {
 	{ ADDRESS,	"",		NONE,		t_neighbor_modifiers},
+	{ PEERDESC,	"",		NONE,		t_neighbor_modifiers},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -173,40 +176,29 @@ int			 parse_asnum(const char *, u_int16_t *);
 struct parse_result *
 parse(int argc, char *argv[])
 {
-	int			 curarg = 1;
 	const struct token	*table = t_main;
 	const struct token	*match;
-	char			*word;
 
 	bzero(&res, sizeof(res));
-	if (argc == 1)
-		return (&res);
 
-	for (;;) {
-		if (argc > curarg)
-			word = argv[curarg];
-		else
-			word = NULL;
-
-		if ((match = match_token(word, table)) == NULL) {
+	while (argc > 0) {
+		if ((match = match_token(argv[0], table)) == NULL) {
 			fprintf(stderr, "valid commands/args:\n");
 			show_valid_args(table);
 			return (NULL);
 		}
 
-		curarg++;
+		argc--;
+		argv++;
 
-		if (match->type == NOTOKEN)
-			break;
-
-		if (match->next == NULL)
+		if (match->type == NOTOKEN || match->next == NULL)
 			break;
 
 		table = match->next;
 	}
 
-	if (curarg < argc) {
-		fprintf(stderr, "superfluous argument: %s\n", argv[curarg]);
+	if (argc > 0) {
+		fprintf(stderr, "superfluous argument: %s\n", argv[0]);
 		return (NULL);
 	}
 
@@ -276,6 +268,16 @@ match_token(const char *word, const struct token table[])
 				t = &table[i];
 			}
 			break;
+		case PEERDESC:
+			if (!match && word != NULL && strlen(word) > 0) {
+				if (strlcpy(res.peerdesc, word,
+				    sizeof(res.peerdesc)) >=
+				    sizeof(res.peerdesc))
+					err(1, "neighbor description too long");
+				match++;
+				t = &table[i];
+			}
+			break;
 		case ENDTOKEN:
 			break;
 		}
@@ -315,6 +317,9 @@ show_valid_args(const struct token table[])
 			break;
 		case ASNUM:
 			fprintf(stderr, "  <asnum>\n");
+			break;
+		case PEERDESC:
+			fprintf(stderr, "  <neighbor description>\n");
 			break;
 		case ENDTOKEN:
 			break;
@@ -390,4 +395,3 @@ parse_asnum(const char *word, u_int16_t *asnum)
 	*asnum = (u_int16_t)ulval;
 	return (1);
 }
-
