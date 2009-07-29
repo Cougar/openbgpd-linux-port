@@ -1,4 +1,4 @@
-/*	$OpenBSD: bgpctl.c,v 1.76 2005/03/14 12:36:27 henning Exp $ */
+/*	$OpenBSD: bgpctl.c,v 1.88 2005/07/01 18:59:14 fgsch Exp $ */
 
 /*
  * Copyright (c) 2003 Henning Brauer <henning@openbsd.org>
@@ -55,6 +55,7 @@ static char	*fmt_timeframe(time_t t);
 static char	*fmt_timeframe_core(time_t t);
 void		 show_fib_head(void);
 void		 show_network_head(void);
+void		 show_fib_flags(u_int16_t);
 int		 show_fib_msg(struct imsg *);
 void		 show_nexthop_head(void);
 int		 show_nexthop_msg(struct imsg *);
@@ -70,6 +71,8 @@ void		 show_rib_summary_head(void);
 void		 print_prefix(struct bgpd_addr *, u_int8_t, u_int8_t);
 const char *	 print_origin(u_int8_t, int);
 int		 show_rib_summary_msg(struct imsg *);
+void		 send_filterset(struct imsgbuf *, struct filter_set_head *);
+static const char	*get_errstr(u_int8_t, u_int8_t);
 
 struct imsgbuf	*ibuf;
 
@@ -78,7 +81,8 @@ usage(void)
 {
 	extern char	*__progname;
 
-	fprintf(stderr, "usage: %s [-n] <command> [arg [...]]\n", __progname);
+	fprintf(stderr, "usage: %s [-s socket] [-n] "
+	    "<command> [arg [...]]\n", __progname);
 	exit(1);
 }
 
@@ -91,12 +95,17 @@ main(int argc, char *argv[])
 	struct network_config	 net;
 	struct parse_result	*res;
 	struct ctl_neighbor	 neighbor;
+	char			*sockname;
 
-	while ((ch = getopt(argc, argv, "n")) != -1) {
+	sockname = SOCKET_NAME;
+	while ((ch = getopt(argc, argv, "ns:")) != -1) {
 		switch (ch) {
 		case 'n':
 			if (++nodescr > 1)
 				usage();
+			break;
+		case 's':
+			sockname = optarg;
 			break;
 		default:
 			usage();
@@ -117,9 +126,11 @@ main(int argc, char *argv[])
 
 	bzero(&sun, sizeof(sun));
 	sun.sun_family = AF_UNIX;
-	strlcpy(sun.sun_path, SOCKET_NAME, sizeof(sun.sun_path));
+	if (strlcpy(sun.sun_path, sockname, sizeof(sun.sun_path)) >=
+	    sizeof(sun.sun_path))
+		errx(1, "socket name too long");
 	if (connect(fd, (struct sockaddr *)&sun, sizeof(sun)) == -1)
-		err(1, "connect: %s", SOCKET_NAME);
+		err(1, "connect: %s", sockname);
 
 	if ((ibuf = malloc(sizeof(struct imsgbuf))) == NULL)
 		fatal(NULL);
@@ -136,10 +147,19 @@ main(int argc, char *argv[])
 		show_summary_head();
 		break;
 	case SHOW_FIB:
-		if (!res->addr.af)
-			imsg_compose(ibuf, IMSG_CTL_KROUTE, 0, 0, -1,
-			    &res->flags, sizeof(res->flags));
-		else
+		if (!res->addr.af) {
+			struct buf	*msg;
+
+			if ((msg = imsg_create(ibuf, IMSG_CTL_KROUTE, 0, 0,
+			    sizeof(res->flags) + sizeof(res->af))) == NULL)
+				errx(1, "imsg_create failure");
+			if (imsg_add(msg, &res->flags, sizeof(res->flags)) ==
+			    -1 ||
+			    imsg_add(msg, &res->af, sizeof(res->af)) == -1)
+				errx(1, "imsg_add failure");
+			if (imsg_close(ibuf, msg) < 0)
+				errx(1, "imsg_close error");
+		} else
 			imsg_compose(ibuf, IMSG_CTL_KROUTE_ADDR, 0, 0, -1,
 			    &res->addr, sizeof(res->addr));
 		show_fib_head();
@@ -227,6 +247,7 @@ main(int argc, char *argv[])
 		if (res->action == NETWORK_ADD) {
 			imsg_compose(ibuf, IMSG_NETWORK_ADD, 0, 0, -1,
 			    &net, sizeof(net));
+			send_filterset(ibuf, &res->set);
 			imsg_compose(ibuf, IMSG_NETWORK_DONE, 0, 0, -1,
 			    NULL, 0);
 		} else
@@ -454,24 +475,35 @@ show_neighbor_msg(struct imsg *imsg, enum neighbor_views nv)
 			break;
 		}
 		printf("\n");
-		if (getnameinfo((struct sockaddr *)&p->sa_local,
-		    SS_LEN((socklen_t)p->sa_local),
-		    buf, sizeof(buf), pbuf, sizeof(pbuf),
-		    NI_NUMERICHOST | NI_NUMERICSERV)) {
-			strlcpy(buf, "(unknown)", sizeof(buf));
-			strlcpy(pbuf, "", sizeof(pbuf));
-		}
-		printf("  Local host:  %20s, Local port:  %5s\n", buf, pbuf);
+ 		if (p->state == STATE_IDLE) {
+ 			static const char	*errstr;
 
-		if (getnameinfo((struct sockaddr *)&p->sa_remote,
-		    SS_LEN((socklen_t)p->sa_remote),
-		    buf, sizeof(buf), pbuf, sizeof(pbuf),
-		    NI_NUMERICHOST | NI_NUMERICSERV)) {
-			strlcpy(buf, "(unknown)", sizeof(buf));
-			strlcpy(pbuf, "", sizeof(pbuf));
+ 			errstr = get_errstr(p->stats.last_sent_errcode,
+ 			    p->stats.last_sent_suberr);
+ 			if (errstr)
+ 				printf("  Last error: %s\n\n", errstr);
+ 		} else {
+ 			if (getnameinfo((struct sockaddr *)&p->sa_local,
+ 			    SS_LEN((socklen_t)p->sa_local),
+ 			    buf, sizeof(buf), pbuf, sizeof(pbuf),
+ 			    NI_NUMERICHOST | NI_NUMERICSERV)) {
+ 				strlcpy(buf, "(unknown)", sizeof(buf));
+ 				strlcpy(pbuf, "", sizeof(pbuf));
+ 			}
+ 			printf("  Local host:  %20s, Local port:  %5s\n", buf,
+ 			    pbuf);
+ 
+ 			if (getnameinfo((struct sockaddr *)&p->sa_remote,
+ 			    SS_LEN((socklen_t)p->sa_remote),
+ 			    buf, sizeof(buf), pbuf, sizeof(pbuf),
+ 			    NI_NUMERICHOST | NI_NUMERICSERV)) {
+ 				strlcpy(buf, "(unknown)", sizeof(buf));
+ 				strlcpy(pbuf, "", sizeof(pbuf));
+ 			}
+ 			printf("  Remote host: %20s, Remote port: %5s\n", buf,
+ 			    pbuf);
+ 			printf("\n");
 		}
-		printf("  Remote host: %20s, Remote port: %5s\n", buf, pbuf);
-		printf("\n");
 		break;
 	case IMSG_CTL_END:
 		return (1);
@@ -604,7 +636,8 @@ void
 show_fib_head(void)
 {
 	printf("flags: * = valid, B = BGP, C = Connected, S = Static\n");
-	printf("       N = BGP Nexthop reachable via this route\n\n");
+	printf("       N = BGP Nexthop reachable via this route\n");
+	printf("       r = reject route, b = blackhole route\n\n");
 	printf("flags destination          gateway\n");
 }
 
@@ -615,10 +648,45 @@ show_network_head(void)
 	printf("flags destination\n");
 }
 
+void
+show_fib_flags(u_int16_t flags)
+{
+	if (flags & F_DOWN)
+		printf(" ");
+	else
+		printf("*");
+
+	if (flags & F_BGPD_INSERTED)
+		printf("B");
+	else if (flags & F_CONNECTED)
+		printf("C");
+	else if (flags & F_STATIC)
+		printf("S");
+	else
+		printf(" ");
+
+	if (flags & F_NEXTHOP)
+		printf("N");
+	else
+		printf(" ");
+
+	if (flags & F_REJECT && flags & F_BLACKHOLE)
+		printf("f");
+	else if (flags & F_REJECT)
+		printf("r");
+	else if (flags & F_BLACKHOLE)
+		printf("b");
+	else
+		printf(" ");
+
+	printf("  ");
+}
+
 int
 show_fib_msg(struct imsg *imsg)
 {
 	struct kroute		*k;
+	struct kroute6		*k6;
 	char			*p;
 
 	switch (imsg->hdr.type) {
@@ -628,26 +696,8 @@ show_fib_msg(struct imsg *imsg)
 			errx(1, "wrong imsg len");
 		k = imsg->data;
 
-		if (k->flags & F_DOWN)
-			printf(" ");
-		else
-			printf("*");
+		show_fib_flags(k->flags);
 
-		if (k->flags & F_BGPD_INSERTED)
-			printf("B");
-		else if (k->flags & F_CONNECTED)
-			printf("C");
-		else if (k->flags & F_KERNEL)
-			printf("S");
-		else
-			printf(" ");
-
-		if (k->flags & F_NEXTHOP)
-			printf("N");
-		else
-			printf(" ");
-
-		printf("   ");
 		if (asprintf(&p, "%s/%u", inet_ntoa(k->prefix), k->prefixlen) ==
 		    -1)
 			err(1, NULL);
@@ -658,6 +708,26 @@ show_fib_msg(struct imsg *imsg)
 			printf("%s", inet_ntoa(k->nexthop));
 		else if (k->flags & F_CONNECTED)
 			printf("link#%u", k->ifindex);
+		printf("\n");
+
+		break;
+	case IMSG_CTL_KROUTE6:
+		if (imsg->hdr.len < IMSG_HEADER_SIZE + sizeof(struct kroute6))
+			errx(1, "wrong imsg len");
+		k6 = imsg->data;
+
+		show_fib_flags(k6->flags);
+
+		if (asprintf(&p, "%s/%u", log_in6addr(&k6->prefix),
+		    k6->prefixlen) == -1)
+			err(1, NULL);
+		printf("%-20s ", p);
+		free(p);
+
+		if (!IN6_IS_ADDR_UNSPECIFIED(&k6->nexthop))
+			printf("%s", log_in6addr(&k6->nexthop));
+		else if (k6->flags & F_CONNECTED)
+			printf("link#%u", k6->ifindex);
 		printf("\n");
 
 		break;
@@ -840,7 +910,7 @@ show_rib_summary_head(void)
 	printf(
 	    "flags: * = Valid, > = Selected, I = via IBGP, A = Announced\n");
 	printf("origin: i = IGP, e = EGP, ? = Incomplete\n\n");
-	printf("%-4s %-20s%-15s  %5s %5s %s\n", "flags", "destination",
+	printf("%-5s %-20s%-15s  %5s %5s %s\n", "flags", "destination",
 	    "gateway", "lpref", "med", "aspath origin");
 }
 
@@ -861,9 +931,9 @@ print_prefix(struct bgpd_addr *prefix, u_int8_t prefixlen, u_int8_t flags)
 		*p++ = '>';
 	*p = '\0';
 
-	if (asprintf(&p, "%s/%u", inet_ntoa(prefix->v4), prefixlen) == -1)
+	if (asprintf(&p, "%s/%u", log_addr(prefix), prefixlen) == -1)
 		err(1, NULL);
-	printf("%-4s %-20s", flagstr, p);
+	printf("%-5s %-20s", flagstr, p);
 	free(p);
 }
 
@@ -882,84 +952,86 @@ print_origin(u_int8_t origin, int sum)
 	}
 }
 
-char			*aspath = NULL;
-struct ctl_show_rib	*rib = NULL;
 
 int
 show_rib_summary_msg(struct imsg *imsg)
 {
-	struct ctl_show_rib_prefix	*p;
-	u_char				*asdata;
+	struct ctl_show_rib	 rib;
+	char			*aspath;
+	u_char			*asdata;
 
 	switch (imsg->hdr.type) {
 	case IMSG_CTL_SHOW_RIB:
-		if (rib != NULL) {
-			free(rib);
-			rib = NULL;
-		}
-		if (aspath != NULL) {
-			free(aspath);
-			aspath = NULL;
-		}
+		memcpy(&rib, imsg->data, sizeof(rib));
 
-		if ((rib = malloc(imsg->hdr.len - IMSG_HEADER_SIZE)) == NULL)
-			err(1, NULL);
-		memcpy(rib, imsg->data, imsg->hdr.len - IMSG_HEADER_SIZE);
+		print_prefix(&rib.prefix, rib.prefixlen, rib.flags);
+		printf("%-15s ", log_addr(&rib.nexthop));
 
-		print_prefix(&rib->prefix, rib->prefixlen, rib->flags);
-		printf("%-15s ", inet_ntoa(rib->nexthop.v4));
-
-		printf(" %5u %5u ", rib->local_pref, rib->med);
+		printf(" %5u %5u ", rib.local_pref, rib.med);
 
 		asdata = imsg->data;
 		asdata += sizeof(struct ctl_show_rib);
-		if (aspath_asprint(&aspath, asdata, rib->aspath_len) == -1)
+		if (aspath_asprint(&aspath, asdata, rib.aspath_len) == -1)
 			err(1, NULL);
 		if (strlen(aspath) > 0)
 			printf("%s ", aspath);
+		free(aspath);
 
-		printf("%s\n", print_origin(rib->origin, 1));
-		break;
-	case IMSG_CTL_SHOW_RIB_PREFIX:
-		p = imsg->data;
-		if (rib == NULL)
-			/* unexpected packet */
-			return (0);
-
-		print_prefix(&p->prefix, p->prefixlen, p->flags);
-		printf("%-15s ", inet_ntoa(rib->nexthop.v4));
-
-		printf(" %5u %5u ", rib->local_pref, rib->med);
-
-		if (strlen(aspath) > 0)
-			printf("%s ", aspath);
-
-		printf("%s\n", print_origin(rib->origin, 1));
+		printf("%s\n", print_origin(rib.origin, 1));
 		break;
 	case IMSG_CTL_END:
-		if (rib != NULL) {
-			free(rib);
-			rib = NULL;
-		}
-		if (aspath != NULL) {
-			free(aspath);
-			aspath = NULL;
-		}
-
 		return (1);
 	default:
-		if (rib != NULL) {
-			free(rib);
-			rib = NULL;
-		}
-		if (aspath != NULL) {
-			free(aspath);
-			aspath = NULL;
-		}
-
 		break;
 	}
 
 	return (0);
 }
 
+void
+send_filterset(struct imsgbuf *i, struct filter_set_head *set)
+{
+	struct filter_set	*s;
+
+	while ((s = TAILQ_FIRST(set)) != NULL) {
+		imsg_compose(i, IMSG_FILTER_SET, 0, 0, -1, s,
+		    sizeof(struct filter_set));
+		TAILQ_REMOVE(set, s, entry);
+		free(s);
+	}
+}
+
+static const char *
+get_errstr(u_int8_t errcode, u_int8_t subcode)
+{
+	static const char	*errstr = NULL;
+
+	if (errcode && errcode < sizeof(errnames)/sizeof(char *))
+		errstr = errnames[errcode];
+
+	switch (errcode) {
+	case ERR_HEADER:
+		if (subcode &&
+		    subcode < sizeof(suberr_header_names)/sizeof(char *))
+			errstr = suberr_header_names[subcode];
+		break;
+	case ERR_OPEN:
+		if (subcode &&
+		    subcode < sizeof(suberr_open_names)/sizeof(char *))
+			errstr = suberr_open_names[subcode];
+		break;
+	case ERR_UPDATE:
+		if (subcode &&
+		    subcode < sizeof(suberr_update_names)/sizeof(char *))
+			errstr = suberr_update_names[subcode];
+		break;
+	case ERR_HOLDTIMEREXPIRED:
+	case ERR_FSM:
+	case ERR_CEASE:
+		break;
+	default:
+		return ("unknown error code");
+	}
+
+	return (errstr);
+}
