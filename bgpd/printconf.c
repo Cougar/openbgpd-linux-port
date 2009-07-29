@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "sys-queue.h"
 #include "bgpd.h"
 #include "mrt.h"
 #include "session.h"
@@ -234,6 +235,7 @@ print_peer(struct peer_config *p, struct bgpd_config *conf)
 const char *
 print_auth_alg(u_int8_t alg)
 {
+#if 0
 	switch (alg) {
 	case SADB_AALG_SHA1HMAC:
 		return ("sha1");
@@ -242,11 +244,14 @@ print_auth_alg(u_int8_t alg)
 	default:
 		return ("???");
 	}
+#endif
+	return ("???");
 }
 
 const char *
 print_enc_alg(u_int8_t alg)
 {
+#if 0
 	switch (alg) {
 	case SADB_EALG_3DESCBC:
 		return ("3des");
@@ -255,6 +260,8 @@ print_enc_alg(u_int8_t alg)
 	default:
 		return ("???");
 	}
+#endif
+	return ("???");
 }
 
 void

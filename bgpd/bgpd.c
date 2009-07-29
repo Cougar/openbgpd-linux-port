@@ -32,6 +32,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "sys-queue.h"
 #include "mrt.h"
 #include "bgpd.h"
 #include "session.h"
@@ -216,8 +217,8 @@ main(int argc, char *argv[])
 	mrt_init(&ibuf_rde, &ibuf_se);
 	if ((rfd = kr_init(!(conf.flags & BGPD_FLAG_NO_FIB_UPDATE))) == -1)
 		quit = 1;
-	if (pftable_clear_all() != 0)
-		quit = 1;
+//	if (pftable_clear_all() != 0)
+//		quit = 1;
 
 	while ((net = TAILQ_FIRST(&net_l)) != NULL) {
 		TAILQ_REMOVE(&net_l, net, entry);
@@ -329,7 +330,7 @@ main(int argc, char *argv[])
 	free(rules_l);
 	control_cleanup();
 	kr_shutdown();
-	pftable_clear_all();
+//	pftable_clear_all();
 	free(conf.listen_addrs);
 
 	do {
@@ -477,6 +478,7 @@ dispatch_imsg(struct imsgbuf *ibuf, int idx)
 				else
 					kr_nexthop_delete(imsg.data);
 			break;
+#if 0
 		case IMSG_PFTABLE_ADD:
 			if (idx != PFD_PIPE_ROUTE)
 				log_warnx("pftable request not from RDE");
@@ -506,6 +508,7 @@ dispatch_imsg(struct imsgbuf *ibuf, int idx)
 				else if (pftable_commit() != 0)
 					return (-1);
 			break;
+#endif
 		case IMSG_CTL_RELOAD:
 			if (idx != PFD_PIPE_SESSION)
 				log_warnx("reload request not from SE");

@@ -28,6 +28,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "sys-queue.h"
 #include "bgpd.h"
 #include "mrt.h"
 #include "rde.h"
@@ -145,7 +146,7 @@ rde_main(struct bgpd_config *config, struct peer *peer_l,
 
 	if (setgroups(1, &pw->pw_gid) ||
 	    setegid(pw->pw_gid) || setgid(pw->pw_gid) ||
-	    seteuid(pw->pw_uid) || setuid(pw->pw_uid)) {
+	    setuid(pw->pw_uid)) {
 		fatal("can't drop privileges");
 	}
 
