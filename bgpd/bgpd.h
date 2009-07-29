@@ -470,6 +470,8 @@ struct ctl_neighbor {
 	char			descr[PEER_DESCR_LEN];
 };
 
+#define	RTLABEL_LEN	32	// from <net/route.h>
+
 struct kroute_label {
 	struct kroute	kr;
 	char		label[RTLABEL_LEN];
