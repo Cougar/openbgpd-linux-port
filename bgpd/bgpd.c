@@ -38,7 +38,7 @@
 #include "session.h"
 
 void		sighdlr(int);
-__dead void	usage(void);
+void		usage(void);
 int		main(int, char *[]);
 int		check_child(pid_t, const char *);
 int		send_filterset(struct imsgbuf *, struct filter_set_head *,
@@ -76,7 +76,7 @@ sighdlr(int sig)
 	}
 }
 
-__dead void
+void
 usage(void)
 {
 	extern char *__progname;
