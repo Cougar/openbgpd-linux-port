@@ -20,11 +20,10 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/sysctl.h>
-#include <sys/tree.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <net/if.h>
-#include <net/if_dl.h>
+// #include <net/if_dl.h>
 #include <net/route.h>
 #include <err.h>
 #include <errno.h>
@@ -34,6 +33,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "sys-tree.h"
+#include "sys-queue.h"
 #include "bgpd.h"
 
 struct {
@@ -126,8 +127,8 @@ u_int8_t	prefixlen_classful(in_addr_t);
 u_int8_t	mask2prefixlen(in_addr_t);
 u_int8_t	mask2prefixlen6(struct sockaddr_in6 *);
 void		get_rtaddrs(int, struct sockaddr *, struct sockaddr **);
-void		if_change(u_short, int, struct if_data *);
-void		if_announce(void *);
+//void		if_change(u_short, int, struct if_data *);
+//void		if_announce(void *);
 
 int		send_rtmsg(int, int, struct kroute *);
 int		send_rt6msg(int, int, struct kroute6 *);
@@ -171,10 +172,12 @@ kr_init(int fs, u_int rtableid)
 		return (-1);
 	}
 
+#if 0
 	/* not interested in my own messages */
 	if (setsockopt(kr_state.fd, SOL_SOCKET, SO_USELOOPBACK,
 	    &opt, sizeof(opt)) == -1)
 		log_warn("kr_init: setsockopt");	/* not fatal */
+#endif 
 
 	/* grow receive buffer, don't wanna miss messages */
 	optlen = sizeof(default_rcvbuf);
@@ -215,6 +218,7 @@ kr_init(int fs, u_int rtableid)
 int
 kr_change(struct kroute_label *kl)
 {
+#if 0
 	struct kroute_node	*kr;
 	int			 action = RTM_ADD;
 
@@ -263,13 +267,14 @@ kr_change(struct kroute_label *kl)
 		else
 			kr->r.flags &= ~F_REJECT;
 	}
-
+#endif
 	return (0);
 }
 
 int
 kr_delete(struct kroute_label *kl)
 {
+#if 0
 	struct kroute_node	*kr;
 
 	if ((kr = kroute_find(kl->kr.prefix.s_addr, kl->kr.prefixlen)) ==
@@ -291,7 +296,7 @@ kr_delete(struct kroute_label *kl)
 
 	if (kroute_remove(kr) == -1)
 		return (-1);
-
+#endif
 	return (0);
 }
 
@@ -397,7 +402,7 @@ kr_fib_couple(void)
 		return;
 
 	kr_state.fib_sync = 1;
-
+#if 0
 	RB_FOREACH(kr, kroute_tree, &krt)
 		if ((kr->r.flags & F_BGPD_INSERTED))
 			send_rtmsg(kr_state.fd, RTM_ADD, &kr->r);
@@ -405,6 +410,7 @@ kr_fib_couple(void)
 		if ((kr6->r.flags & F_BGPD_INSERTED))
 			send_rt6msg(kr_state.fd, RTM_ADD, &kr6->r);
 
+#endif
 	log_info("kernel routing table coupled");
 }
 
@@ -416,7 +422,7 @@ kr_fib_decouple(void)
 
 	if (kr_state.fib_sync == 0)	/* already decoupled */
 		return;
-
+#if 0
 	RB_FOREACH(kr, kroute_tree, &krt)
 		if ((kr->r.flags & F_BGPD_INSERTED))
 			send_rtmsg(kr_state.fd, RTM_DELETE, &kr->r);
@@ -424,6 +430,7 @@ kr_fib_decouple(void)
 		if ((kr6->r.flags & F_BGPD_INSERTED))
 			send_rt6msg(kr_state.fd, RTM_DELETE, &kr6->r);
 
+#endif
 	kr_state.fib_sync = 0;
 
 	log_info("kernel routing table decoupled");
@@ -1606,18 +1613,21 @@ inet6applymask(struct in6_addr *dest, const struct in6_addr *src, int prefixlen)
 void
 get_rtaddrs(int addrs, struct sockaddr *sa, struct sockaddr **rti_info)
 {
+#if 0
 	int	i;
 
 	for (i = 0; i < RTAX_MAX; i++) {
 		if (addrs & (1 << i)) {
 			rti_info[i] = sa;
 			sa = (struct sockaddr *)((char *)(sa) +
-			    ROUNDUP(sa->sa_len, sizeof(long)));
+			    ROUNDUP(SA_LEN(sa), sizeof(long)));
 		} else
 			rti_info[i] = NULL;
 	}
+#endif
+	return;
 }
-
+#if 0
 void
 if_change(u_short ifindex, int flags, struct if_data *ifd)
 {
@@ -1698,10 +1708,12 @@ if_change(u_short ifindex, int flags, struct if_data *ifd)
 			}
 	}
 }
+#endif
 
 void
 if_announce(void *msg)
 {
+#if 0
 	struct if_announcemsghdr	*ifan;
 	struct kif_node			*kif;
 
@@ -1723,6 +1735,7 @@ if_announce(void *msg)
 		kif_remove(kif);
 		break;
 	}
+#endif
 }
 
 /*
@@ -1732,6 +1745,7 @@ if_announce(void *msg)
 int
 send_rtmsg(int fd, int action, struct kroute *kroute)
 {
+#if 0
 	struct {
 		struct rt_msghdr	hdr;
 		struct sockaddr_in	prefix;
@@ -1802,7 +1816,7 @@ retry:
 			return (0);
 		}
 	}
-
+#endif
 	return (0);
 }
 
@@ -1886,6 +1900,7 @@ retry:
 int
 fetchtable(u_int rtableid, int connected_only)
 {
+#if 0
 	size_t			 len;
 	int			 mib[7];
 	char			*buf, *next, *lim;
@@ -2049,12 +2064,14 @@ fetchtable(u_int rtableid, int connected_only)
 		}
 	}
 	free(buf);
+#endif
 	return (0);
 }
 
 int
 fetchifs(int ifindex)
 {
+#if 0
 	size_t			 len;
 	int			 mib[6];
 	char			*buf, *next, *lim;
@@ -2121,12 +2138,14 @@ fetchifs(int ifindex)
 		kif_insert(kif);
 	}
 	free(buf);
+#endif
 	return (0);
 }
 
 int
 dispatch_rtmsg(void)
 {
+#if 0
 	char			 buf[RT_BUF_SIZE];
 	ssize_t			 n;
 	char			*next, *lim;
@@ -2190,6 +2209,7 @@ dispatch_rtmsg(void)
 			break;
 		}
 	}
+#endif
 	return (0);
 }
 

@@ -28,6 +28,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "sys-queue.h"
 #include "bgpd.h"
 #include "session.h"
 
@@ -274,7 +275,9 @@ prepare_listeners(struct bgpd_config *conf)
 		la->fd = -1;
 		la->flags = DEFAULT_LISTENER;
 		la->reconf = RECONF_REINIT;
+#ifdef HAVE_STRUCT_SOCKADDR_SS_LEN
 		la->sa.ss_len = sizeof(struct sockaddr_in);
+#endif
 		((struct sockaddr_in *)&la->sa)->sin_family = AF_INET;
 		((struct sockaddr_in *)&la->sa)->sin_addr.s_addr =
 		    htonl(INADDR_ANY);
@@ -286,7 +289,9 @@ prepare_listeners(struct bgpd_config *conf)
 		la->fd = -1;
 		la->flags = DEFAULT_LISTENER;
 		la->reconf = RECONF_REINIT;
+#ifdef HAVE_STRUCT_SOCKADDR_SS_LEN
 		la->sa.ss_len = sizeof(struct sockaddr_in6);
+#endif
 		((struct sockaddr_in6 *)&la->sa)->sin6_family = AF_INET6;
 		((struct sockaddr_in6 *)&la->sa)->sin6_port = htons(BGP_PORT);
 		TAILQ_INSERT_TAIL(conf->listen_addrs, la, entry);
@@ -308,12 +313,12 @@ prepare_listeners(struct bgpd_config *conf)
 				fatal("socket");
 		}
 
-		opt = 1;
-		if (setsockopt(la->fd, SOL_SOCKET, SO_REUSEADDR,
-		    &opt, sizeof(opt)) == -1)
-			fatal("setsockopt SO_REUSEADDR");
+//		opt = 1;
+//		if (setsockopt(la->fd, SOL_SOCKET, SO_REUSEADDR,
+//		    &opt, sizeof(opt)) == -1)
+//			fatal("setsockopt SO_REUSEADDR");
 
-		if (bind(la->fd, (struct sockaddr *)&la->sa, la->sa.ss_len) ==
+		if (bind(la->fd, (struct sockaddr *)&la->sa, SS_LEN(la->sa)) ==
 		    -1) {
 			switch (la->sa.ss_family) {
 			case AF_INET:
