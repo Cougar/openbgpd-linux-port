@@ -18,7 +18,7 @@
 
 #include <sys/types.h>
 #include <sys/queue.h>
-#include <sys/hash.h>
+#include "sys-hash.h"
 
 #include <stdlib.h>
 #include <string.h>
