@@ -22,6 +22,7 @@
 
 #include <string.h>
 
+#include "sys-queue.h"
 #include "bgpd.h"
 #include "rde.h"
 
