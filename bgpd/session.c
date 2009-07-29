@@ -2402,6 +2402,7 @@ session_dispatch_imsg(struct imsgbuf *ibuf, int idx, u_int *listener_cnt)
 			pending_reconf = 0;
 			log_info("SE reconfigured");
 			break;
+#if 0
 		case IMSG_IFINFO:
 			if (idx != PFD_PIPE_MAIN)
 				fatalx("IFINFO message not from parent");
@@ -2425,6 +2426,7 @@ session_dispatch_imsg(struct imsgbuf *ibuf, int idx, u_int *listener_cnt)
 					}
 				}
 			break;
+#endif
 		case IMSG_MRT_OPEN:
 		case IMSG_MRT_REOPEN:
 			if (imsg.hdr.len > IMSG_HEADER_SIZE +
