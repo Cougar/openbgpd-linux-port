@@ -1,4 +1,4 @@
-/*	$OpenBSD: bgpctl.c,v 1.61 2004/08/20 15:49:35 henning Exp $ */
+/*	$OpenBSD: bgpctl.c,v 1.76 2005/03/14 12:36:27 henning Exp $ */
 
 /*
  * Copyright (c) 2003 Henning Brauer <henning@openbsd.org>
@@ -41,10 +41,11 @@ enum neighbor_views {
 	NV_TIMERS
 };
 
-void		 usage(void);
+__dead void	 usage(void);
 int		 main(int, char *[]);
+char		*fmt_peer(const struct peer_config *, int);
 void		 show_summary_head(void);
-int		 show_summary_msg(struct imsg *);
+int		 show_summary_msg(struct imsg *, int);
 int		 show_neighbor_msg(struct imsg *, enum neighbor_views);
 void		 print_neighbor_capa_mp_safi(u_int8_t);
 void		 print_neighbor_msgstats(struct peer *);
@@ -58,6 +59,7 @@ int		 show_fib_msg(struct imsg *);
 void		 show_nexthop_head(void);
 int		 show_nexthop_msg(struct imsg *);
 void		 show_interface_head(void);
+int		 ift2ifm(int);
 const char *	 get_media_descr(int);
 const char *	 get_linkstate(int, int);
 void		 print_baudrate(u_long);
@@ -67,14 +69,14 @@ void		 print_prefix(struct bgpd_addr *, u_int8_t, u_int8_t);
 const char *	 print_origin(u_int8_t, int);
 int		 show_rib_summary_msg(struct imsg *);
 
-struct imsgbuf	ibuf;
+struct imsgbuf	*ibuf;
 
-void
+__dead void
 usage(void)
 {
 	extern char	*__progname;
 
-	fprintf(stderr, "usage: %s <command> [arg [...]]\n", __progname);
+	fprintf(stderr, "usage: %s [-n] <command> [arg [...]]\n", __progname);
 	exit(1);
 }
 
@@ -82,13 +84,31 @@ int
 main(int argc, char *argv[])
 {
 	struct sockaddr_un	 sun;
-	int			 fd, n, done;
+	int			 fd, n, done, ch, nodescr = 0;
 	struct imsg		 imsg;
 	struct network_config	 net;
 	struct parse_result	*res;
+	struct ctl_neighbor	 neighbor;
+
+	while ((ch = getopt(argc, argv, "n")) != -1) {
+		switch (ch) {
+		case 'n':
+			if (++nodescr > 1)
+				usage();
+			break;
+		default:
+			usage();
+			/* NOTREACHED */
+		}
+	}
+	argc -= optind;
+	argv += optind;
 
 	if ((res = parse(argc, argv)) == NULL)
 		exit(1);
+
+	memcpy(&neighbor.addr, &res->addr, sizeof(neighbor.addr));
+	strlcpy(neighbor.descr, res->peerdesc, sizeof(neighbor.descr));
 
 	if ((fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
 		err(1, "control_init: socket");
@@ -99,7 +119,9 @@ main(int argc, char *argv[])
 	if (connect(fd, (struct sockaddr *)&sun, sizeof(sun)) == -1)
 		err(1, "connect: %s", SOCKET_NAME);
 
-	imsg_init(&ibuf, fd);
+	if ((ibuf = malloc(sizeof(struct imsgbuf))) == NULL)
+		fatal(NULL);
+	imsg_init(ibuf, fd);
 	done = 0;
 
 	switch (res->action) {
@@ -108,37 +130,38 @@ main(int argc, char *argv[])
 		/* not reached */
 	case SHOW:
 	case SHOW_SUMMARY:
-		imsg_compose(&ibuf, IMSG_CTL_SHOW_NEIGHBOR, 0, NULL, 0);
+		imsg_compose(ibuf, IMSG_CTL_SHOW_NEIGHBOR, 0, 0, -1, NULL, 0);
 		show_summary_head();
 		break;
 	case SHOW_FIB:
 		if (!res->addr.af)
-			imsg_compose(&ibuf, IMSG_CTL_KROUTE, 0, &res->flags,
-			    sizeof(res->flags));
+			imsg_compose(ibuf, IMSG_CTL_KROUTE, 0, 0, -1,
+			    &res->flags, sizeof(res->flags));
 		else
-			imsg_compose(&ibuf, IMSG_CTL_KROUTE_ADDR, 0, &res->addr,
-			    sizeof(res->addr));
+			imsg_compose(ibuf, IMSG_CTL_KROUTE_ADDR, 0, 0, -1,
+			    &res->addr, sizeof(res->addr));
 		show_fib_head();
 		break;
 	case SHOW_NEXTHOP:
-		imsg_compose(&ibuf, IMSG_CTL_SHOW_NEXTHOP, 0, NULL, 0);
+		imsg_compose(ibuf, IMSG_CTL_SHOW_NEXTHOP, 0, 0, -1, NULL, 0);
 		show_nexthop_head();
 		break;
 	case SHOW_INTERFACE:
-		imsg_compose(&ibuf, IMSG_CTL_SHOW_INTERFACE, 0, NULL, 0);
+		imsg_compose(ibuf, IMSG_CTL_SHOW_INTERFACE, 0, 0, -1, NULL, 0);
 		show_interface_head();
 		break;
 	case SHOW_NEIGHBOR:
 	case SHOW_NEIGHBOR_TIMERS:
-		if (res->addr.af)
-			imsg_compose(&ibuf, IMSG_CTL_SHOW_NEIGHBOR, 0,
-			    &res->addr, sizeof(res->addr));
+		if (res->addr.af || res->peerdesc[0])
+			imsg_compose(ibuf, IMSG_CTL_SHOW_NEIGHBOR, 0, 0, -1,
+			    &neighbor, sizeof(neighbor));
 		else
-			imsg_compose(&ibuf, IMSG_CTL_SHOW_NEIGHBOR, 0, NULL, 0);
+			imsg_compose(ibuf, IMSG_CTL_SHOW_NEIGHBOR, 0, 0, -1,
+			    NULL, 0);
 		break;
 	case SHOW_RIB:
 		if (res->as.type != AS_NONE)
-			imsg_compose(&ibuf, IMSG_CTL_SHOW_RIB_AS, 0,
+			imsg_compose(ibuf, IMSG_CTL_SHOW_RIB_AS, 0, 0, -1,
 			    &res->as, sizeof(res->as));
 		else if (res->addr.af) {
 			struct ctl_show_rib_prefix	msg;
@@ -147,14 +170,15 @@ main(int argc, char *argv[])
 			memcpy(&msg.prefix, &res->addr, sizeof(res->addr));
 			msg.prefixlen = res->prefixlen;
 			msg.flags = res->flags;
-			imsg_compose(&ibuf, IMSG_CTL_SHOW_RIB_PREFIX, 0,
+			imsg_compose(ibuf, IMSG_CTL_SHOW_RIB_PREFIX, 0, 0, -1,
 			    &msg, sizeof(msg));
 		} else
-			imsg_compose(&ibuf, IMSG_CTL_SHOW_RIB, 0, NULL, 0);
+			imsg_compose(ibuf, IMSG_CTL_SHOW_RIB, 0, 0, -1,
+			    NULL, 0);
 		show_rib_summary_head();
 		break;
 	case RELOAD:
-		imsg_compose(&ibuf, IMSG_CTL_RELOAD, 0, NULL, 0);
+		imsg_compose(ibuf, IMSG_CTL_RELOAD, 0, 0, -1, NULL, 0);
 		printf("reload request sent.\n");
 		done = 1;
 		break;
@@ -162,12 +186,12 @@ main(int argc, char *argv[])
 		errx(1, "action==FIB");
 		break;
 	case FIB_COUPLE:
-		imsg_compose(&ibuf, IMSG_CTL_FIB_COUPLE, 0, NULL, 0);
+		imsg_compose(ibuf, IMSG_CTL_FIB_COUPLE, 0, 0, -1, NULL, 0);
 		printf("couple request sent.\n");
 		done = 1;
 		break;
 	case FIB_DECOUPLE:
-		imsg_compose(&ibuf, IMSG_CTL_FIB_DECOUPLE, 0, NULL, 0);
+		imsg_compose(ibuf, IMSG_CTL_FIB_DECOUPLE, 0, 0, -1, NULL, 0);
 		printf("decouple request sent.\n");
 		done = 1;
 		break;
@@ -175,20 +199,20 @@ main(int argc, char *argv[])
 		errx(1, "action==NEIGHBOR");
 		break;
 	case NEIGHBOR_UP:
-		imsg_compose(&ibuf, IMSG_CTL_NEIGHBOR_UP, 0,
-		    &res->addr, sizeof(res->addr));
+		imsg_compose(ibuf, IMSG_CTL_NEIGHBOR_UP, 0, 0, -1,
+		    &neighbor, sizeof(neighbor));
 		printf("request sent.\n");
 		done = 1;
 		break;
 	case NEIGHBOR_DOWN:
-		imsg_compose(&ibuf, IMSG_CTL_NEIGHBOR_DOWN, 0,
-		    &res->addr, sizeof(res->addr));
+		imsg_compose(ibuf, IMSG_CTL_NEIGHBOR_DOWN, 0, 0, -1,
+		    &neighbor, sizeof(neighbor));
 		printf("request sent.\n");
 		done = 1;
 		break;
 	case NEIGHBOR_CLEAR:
-		imsg_compose(&ibuf, IMSG_CTL_NEIGHBOR_CLEAR, 0,
-		    &res->addr, sizeof(res->addr));
+		imsg_compose(ibuf, IMSG_CTL_NEIGHBOR_CLEAR, 0, 0, -1,
+		    &neighbor, sizeof(neighbor));
 		printf("request sent.\n");
 		done = 1;
 		break;
@@ -198,45 +222,47 @@ main(int argc, char *argv[])
 		memcpy(&net.prefix, &res->addr, sizeof(res->addr));
 		net.prefixlen = res->prefixlen;
 		/* attribute sets are not supported */
-		if (res->action == NETWORK_ADD)
-			imsg_compose(&ibuf, IMSG_NETWORK_ADD, 0,
+		if (res->action == NETWORK_ADD) {
+			imsg_compose(ibuf, IMSG_NETWORK_ADD, 0, 0, -1,
 			    &net, sizeof(net));
-		else
-			imsg_compose(&ibuf, IMSG_NETWORK_REMOVE, 0,
+			imsg_compose(ibuf, IMSG_NETWORK_DONE, 0, 0, -1,
+			    NULL, 0);
+		} else
+			imsg_compose(ibuf, IMSG_NETWORK_REMOVE, 0, 0, -1,
 			    &net, sizeof(net));
 		printf("request sent.\n");
 		done = 1;
 		break;
 	case NETWORK_FLUSH:
-		imsg_compose(&ibuf, IMSG_NETWORK_FLUSH, 0, NULL, 0);
+		imsg_compose(ibuf, IMSG_NETWORK_FLUSH, 0, 0, -1, NULL, 0);
 		printf("request sent.\n");
 		done = 1;
 		break;
 	case NETWORK_SHOW:
-		imsg_compose(&ibuf, IMSG_CTL_SHOW_NETWORK, 0, NULL, 0);
+		imsg_compose(ibuf, IMSG_CTL_SHOW_NETWORK, 0, 0, -1, NULL, 0);
 		show_network_head();
 		break;
 	}
 
-	while (ibuf.w.queued)
-		if (msgbuf_write(&ibuf.w) < 0)
+	while (ibuf->w.queued)
+		if (msgbuf_write(&ibuf->w) < 0)
 			err(1, "write error");
 
 	while (!done) {
-		if ((n = imsg_read(&ibuf)) == -1)
+		if ((n = imsg_read(ibuf)) == -1)
 			errx(1, "imsg_read error");
 		if (n == 0)
 			errx(1, "pipe closed");
 
 		while (!done) {
-			if ((n = imsg_get(&ibuf, &imsg)) == -1)
+			if ((n = imsg_get(ibuf, &imsg)) == -1)
 				errx(1, "imsg_get error");
 			if (n == 0)
 				break;
 			switch (res->action) {
 			case SHOW:
 			case SHOW_SUMMARY:
-				done = show_summary_msg(&imsg);
+				done = show_summary_msg(&imsg, nodescr);
 				break;
 			case SHOW_FIB:
 				done = show_fib_msg(&imsg);
@@ -279,8 +305,34 @@ main(int argc, char *argv[])
 		}
 	}
 	close(fd);
+	free(ibuf);
 
 	exit(0);
+}
+
+char *
+fmt_peer(const struct peer_config *peer, int nodescr)
+{
+	const char	*ip;
+	char		*p;
+
+	if (peer->descr[0] && !nodescr) {
+		if ((p = strdup(peer->descr)) == NULL)
+			fatal(NULL);
+		return (p);
+	}
+
+	ip = log_addr(&peer->remote_addr);
+	if ((peer->remote_addr.af == AF_INET && peer->remote_masklen != 32) ||
+	    (peer->remote_addr.af == AF_INET6 && peer->remote_masklen != 128)) {
+		if (asprintf(&p, "%s/%u", ip, peer->remote_masklen) == -1)
+			fatal(NULL);
+	} else {
+		if ((p = strdup(ip)) == NULL)
+			fatal(NULL);
+	}
+
+	return (p);
 }
 
 void
@@ -291,7 +343,7 @@ show_summary_head(void)
 }
 
 int
-show_summary_msg(struct imsg *imsg)
+show_summary_msg(struct imsg *imsg, int nodescr)
 {
 	struct peer		*p;
 	char			*s;
@@ -299,19 +351,9 @@ show_summary_msg(struct imsg *imsg)
 	switch (imsg->hdr.type) {
 	case IMSG_CTL_SHOW_NEIGHBOR:
 		p = imsg->data;
-		if ((p->conf.remote_addr.af == AF_INET &&
-		    p->conf.remote_masklen != 32) ||
-		    (p->conf.remote_addr.af == AF_INET6 &&
-		    p->conf.remote_masklen != 128)) {
-			if (asprintf(&s, "%s/%u",
-			    log_addr(&p->conf.remote_addr),
-			    p->conf.remote_masklen) == -1)
-				err(1, NULL);
-		} else
-			if ((s = strdup(log_addr(&p->conf.remote_addr))) ==
-			    NULL)
-				err(1, NULL);
-
+		s = fmt_peer(&p->conf, nodescr);
+		if (strlen(s) >= 20)
+			s[20] = 0;
 		printf("%-20s %5u %10llu %10llu %5u %-8s ",
 		    s, p->conf.remote_as,
 		    p->stats.msg_rcvd_open + p->stats.msg_rcvd_notification +
@@ -323,7 +365,7 @@ show_summary_msg(struct imsg *imsg)
 		    p->wbuf.queued,
 		    fmt_timeframe(p->stats.last_updown));
 		if (p->state == STATE_ESTABLISHED) {
-			printf("%u", p->stats.prefix_cnt);
+			printf("%6u", p->stats.prefix_cnt);
 			if (p->conf.max_prefix != 0)
 				printf("/%u", p->conf.max_prefix);
 		} else
@@ -386,17 +428,18 @@ show_neighbor_msg(struct imsg *imsg, enum neighbor_views nv)
 		printf("  Last read %s, holdtime %us, keepalive interval %us\n",
 		    fmt_timeframe(p->stats.last_read),
 		    p->holdtime, p->holdtime/3);
-		if (p->capa.mp_v4 || p->capa.mp_v6 || p->capa.refresh) {
+		if (p->capa.peer.mp_v4 || p->capa.peer.mp_v6 ||
+		    p->capa.peer.refresh) {
 			printf("  Neighbor capabilities:\n");
-			if (p->capa.mp_v4) {
+			if (p->capa.peer.mp_v4) {
 				printf("    Multiprotocol extensions: IPv4");
-				print_neighbor_capa_mp_safi(p->capa.mp_v4);
+				print_neighbor_capa_mp_safi(p->capa.peer.mp_v4);
 			}
-			if (p->capa.mp_v6) {
+			if (p->capa.peer.mp_v6) {
 				printf("    Multiprotocol extensions: IPv6");
-				print_neighbor_capa_mp_safi(p->capa.mp_v6);
+				print_neighbor_capa_mp_safi(p->capa.peer.mp_v6);
 			}
-			if (p->capa.refresh)
+			if (p->capa.peer.refresh)
 				printf("    Route Refresh\n");
 		}
 		printf("\n");
@@ -629,19 +672,37 @@ show_fib_msg(struct imsg *imsg)
 void
 show_nexthop_head(void)
 {
-	printf("%-20s %s\n", "Nexthop", "State");
+	printf("%-20s %-10s\n", "Nexthop", "State");
 }
 
 int
 show_nexthop_msg(struct imsg *imsg)
 {
 	struct ctl_show_nexthop	*p;
+	int			 ifms_type;
 
 	switch (imsg->hdr.type) {
 	case IMSG_CTL_SHOW_NEXTHOP:
 		p = imsg->data;
-		printf("%-20s %s\n", inet_ntoa(p->addr.v4),
+		printf("%-20s %-10s", inet_ntoa(p->addr.v4),
 		    p->valid ? "valid" : "invalid");
+		if (p->kif.ifname[0]) {
+			printf("%-8s", p->kif.ifname);
+			if (p->kif.flags & IFF_UP) {
+				printf("UP");
+				ifms_type = ift2ifm(p->kif.media_type);
+				if (ifms_type != 0)
+					printf(", %s, %s",
+					    get_media_descr(ifms_type),
+					    get_linkstate(ifms_type,
+					    p->kif.link_state));
+				if (p->kif.baudrate) {
+					printf(", ");
+					print_baudrate(p->kif.baudrate);
+				}
+			}
+		}
+		printf("\n");
 		break;
 	case IMSG_CTL_END:
 		return (1);
@@ -667,6 +728,25 @@ const struct ifmedia_status_description
 		ifm_status_descriptions[] = IFM_STATUS_DESCRIPTIONS;
 const struct ifmedia_description
 		ifm_type_descriptions[] = IFM_TYPE_DESCRIPTIONS;
+
+int
+ift2ifm(int media_type)
+{
+	switch (media_type) {
+	case IFT_ETHER:
+		return (IFM_ETHER);
+	case IFT_FDDI:
+		return (IFM_FDDI);
+	case IFT_ISO88025:
+		return (IFM_TOKEN);
+	case IFT_CARP:
+		return (IFM_CARP);
+	case IFT_IEEE80211:
+		return (IFM_IEEE80211);
+	default:
+		return (0);
+	}
+}
 
 const char *
 get_media_descr(int media_type)
@@ -713,7 +793,6 @@ print_baudrate(u_long baudrate)
 		printf("%lu Bit/s", baudrate);
 }
 
-
 int
 show_interface_msg(struct imsg *imsg)
 {
@@ -726,22 +805,8 @@ show_interface_msg(struct imsg *imsg)
 		printf("%-15s", k->ifname);
 		printf("%-15s", k->nh_reachable ? "ok" : "invalid");
 		printf("%-15s", k->flags & IFF_UP ? "UP" : "");
-		switch (k->media_type) {
-		case IFT_ETHER:
-			ifms_type = IFM_ETHER;
-			break;
-		case IFT_FDDI:
-			ifms_type = IFM_FDDI;
-			break;
-		case IFT_ISO88025:
-			ifms_type = IFM_TOKEN;
-			break;
-		default:
-			ifms_type = 0;
-			break;
-		}
 
-		if (ifms_type)
+		if ((ifms_type = ift2ifm(k->media_type)) != 0)
 			printf("%s, %s", get_media_descr(ifms_type),
 			    get_linkstate(ifms_type, k->link_state));
 		else if (k->link_state == LINK_STATE_UNKNOWN)
