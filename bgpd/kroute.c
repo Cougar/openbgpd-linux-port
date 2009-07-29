@@ -1432,6 +1432,7 @@ kif_kr6_remove(struct kroute6_node *kr)
 int
 kif_validate(struct kif *kif)
 {
+#if 0
 	if (!(kif->flags & IFF_UP))
 		return (0);
 
@@ -1444,12 +1445,14 @@ kif_validate(struct kif *kif)
 	if (kif->link_state == LINK_STATE_DOWN)
 		return (0);
 
+#endif
 	return (1);
 }
 
 int
 kroute_validate(struct kroute *kr)
 {
+#if 0
 	struct kif_node		*kif;
 
 	if (kr->flags & (F_REJECT | F_BLACKHOLE))
@@ -1461,10 +1464,13 @@ kroute_validate(struct kroute *kr)
 			    "referenced from route for %s/%u",
 			    kr->ifindex, inet_ntoa(kr->prefix),
 			    kr->prefixlen);
+#endif
 		return (1);
+#if 0
 	}
 
 	return (kif->k.nh_reachable);
+#endif
 }
 
 int
