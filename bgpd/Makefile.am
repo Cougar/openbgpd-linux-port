@@ -5,4 +5,4 @@ bgpd_SOURCES = bgpd.c buffer.c session.c log.c parse.y config.c imsg.c \
 	       control.c rde_update.c rde_attr.c printconf.c \
 	       rde_filter.c kroute.c
 bgpd_LDADD = ../openbsd-compat/libopenbsdcompat.a -lresolv
-bgpd_CPPFLAGS = DKAME_SCOPEID
+bgpd_CPPFLAGS = -DKAME_SCOPEID
