@@ -27,6 +27,9 @@
 #include <unistd.h>
 
 #include "imsg.h"
+#include "sys-queue.h"
+#include "includes.h"
+#include "config.h"
 
 int	buf_realloc(struct buf *, size_t);
 void	buf_enqueue(struct msgbuf *, struct buf *);

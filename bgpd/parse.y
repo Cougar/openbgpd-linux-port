@@ -36,6 +36,7 @@
 #include <string.h>
 #include <syslog.h>
 
+#include "sys-queue.h"
 #include "bgpd.h"
 #include "mrt.h"
 #include "session.h"
@@ -353,13 +354,17 @@ conf_main	: AS as4number		{
 			la->sa.ss_family = $3.af;
 			switch ($3.af) {
 			case AF_INET:
+#ifdef HAVE_STRUCT_SOCKADDR_SS_LEN
 				la->sa.ss_len = sizeof(struct sockaddr_in);
+#endif
 				in = (struct sockaddr_in *)&la->sa;
 				in->sin_addr.s_addr = $3.v4.s_addr;
 				in->sin_port = htons(BGP_PORT);
 				break;
 			case AF_INET6:
+#ifdef HAVE_STRUCT_SOCKADDR_SS_LEN
 				la->sa.ss_len = sizeof(struct sockaddr_in6);
+#endif
 				in6 = (struct sockaddr_in6 *)&la->sa;
 				memcpy(&in6->sin6_addr, &$3.v6,
 				    sizeof(in6->sin6_addr));
@@ -972,7 +977,7 @@ peeropts	: REMOTEAS as4number	{
 				free($7);
 				YYERROR;
 			}
-
+#if 0
 			if (!strcmp($6, "sha1")) {
 				auth_alg = SADB_AALG_SHA1HMAC;
 				keylen = 20;
@@ -986,6 +991,7 @@ peeropts	: REMOTEAS as4number	{
 				YYERROR;
 			}
 			free($6);
+#endif
 
 			if (strlen($7) / 2 != keylen) {
 				yyerror("auth key len: must be %u bytes, "
@@ -1166,6 +1172,7 @@ encspec		: /* nada */	{
 		}
 		| STRING STRING {
 			bzero(&$$, sizeof($$));
+#if 0
 			if (!strcmp($1, "3des") || !strcmp($1, "3des-cbc")) {
 				$$.enc_alg = SADB_EALG_3DESCBC;
 				$$.enc_key_len = 21; /* XXX verify */
@@ -1180,6 +1187,7 @@ encspec		: /* nada */	{
 				YYERROR;
 			}
 			free($1);
+#endif
 
 			if (strlen($2) / 2 != $$.enc_key_len) {
 				yyerror("enc key length wrong: should be %u "
@@ -1734,6 +1742,7 @@ filter_set_opt	: LOCALPREF NUMBER		{
 			$$->action.prepend = $2;
 		}
 		| PFTABLE STRING		{
+#if 0
 			if (($$ = calloc(1, sizeof(struct filter_set))) == NULL)
 				fatal(NULL);
 			$$->type = ACTION_PFTABLE;
@@ -1759,6 +1768,7 @@ filter_set_opt	: LOCALPREF NUMBER		{
 				YYERROR;
 			}
 			free($2);
+#endif
 		}
 		| RTLABEL STRING		{
 			if (($$ = calloc(1, sizeof(struct filter_set))) == NULL)

@@ -26,6 +26,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "sys-queue.h"
 #include "bgpd.h"
 #include "rde.h"
 #include "session.h"
