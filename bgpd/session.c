@@ -39,6 +39,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "sys-queue.h"
+
 #include "bgpd.h"
 #include "mrt.h"
 #include "session.h"
@@ -130,6 +132,7 @@ setup_listeners(u_int *la_cnt)
 		}
 
 		opt = 1;
+#if 0
 		if (setsockopt(la->fd, IPPROTO_TCP, TCP_MD5SIG,
 		    &opt, sizeof(opt)) == -1) {
 			if (errno == ENOPROTOOPT) {	/* system w/o md5sig */
@@ -138,6 +141,7 @@ setup_listeners(u_int *la_cnt)
 			} else
 				fatal("setsockopt TCP_MD5SIG");
 		}
+#endif
 
 		session_socket_blockmode(la->fd, BM_NONBLOCK);
 
@@ -207,14 +211,16 @@ session_main(struct bgpd_config *config, struct peer *cpeers,
 	setproctitle("session engine");
 	bgpd_process = PROC_SE;
 
+#if 0
 	if (pfkey_init(&sysdep) == -1)
 		fatalx("pfkey setup failed");
+#endif
 
 	if (setgroups(1, &pw->pw_gid) ||
 	    setegid(pw->pw_gid) || setgid(pw->pw_gid) ||
-	    seteuid(pw->pw_uid) || setuid(pw->pw_uid))
+	    setuid(pw->pw_uid))
 		fatal("can't drop privileges");
-
+	
 	endpwent();
 
 	listener_cnt = 0;
@@ -490,7 +496,9 @@ session_main(struct bgpd_config *config, struct peer *cpeers,
 	while ((p = peers) != NULL) {
 		peers = p->next;
 		bgp_fsm(p, EVNT_STOP);
+#if 0
 		pfkey_remove(p);
+#endif
 		free(p);
 	}
 
@@ -571,7 +579,7 @@ bgp_fsm(struct peer *peer, enum session_events event)
 
 			/* init write buffer */
 			msgbuf_init(&peer->wbuf);
-
+#if 0
 			/* init pfkey - remove old if any, load new ones */
 			pfkey_remove(peer);
 			if (pfkey_establish(peer) == -1) {
@@ -579,6 +587,7 @@ bgp_fsm(struct peer *peer, enum session_events event)
 				    "pfkey setup failed");
 				return;
 			}
+#endif
 
 			if (!peer->depend_ok)
 				peer->ConnectRetryTimer = 0;
@@ -926,7 +935,7 @@ session_accept(int listenfd)
 			close(connfd);
 			return;
 		}
-
+#if 0
 		if (p->conf.auth.method == AUTH_MD5SIG) {
 			if (sysdep.no_md5sig) {
 				log_peer_warnx(&p->conf,
@@ -945,6 +954,7 @@ session_accept(int listenfd)
 				return;
 			}
 		}
+#endif
 		p->fd = p->wbuf.fd = connfd;
 		if (session_setup_socket(p)) {
 			close(connfd);
@@ -985,7 +995,7 @@ session_connect(struct peer *peer)
 		bgp_fsm(peer, EVNT_CON_OPENFAIL);
 		return (-1);
 	}
-
+#if 0
 	if (peer->conf.auth.method == AUTH_MD5SIG) {
 		if (sysdep.no_md5sig) {
 			log_peer_warnx(&peer->conf,
@@ -1000,12 +1010,13 @@ session_connect(struct peer *peer)
 			return (-1);
 		}
 	}
+#endif
 	peer->wbuf.fd = peer->fd;
 
 	/* if update source is set we need to bind() */
 	if (peer->conf.local_addr.af) {
 		sa = addr2sa(&peer->conf.local_addr, 0);
-		if (bind(peer->fd, sa, sa->sa_len) == -1) {
+		if (bind(peer->fd, sa, SA_LEN(sa)) == -1) {
 			log_peer_warn(&peer->conf, "session_connect bind");
 			bgp_fsm(peer, EVNT_CON_OPENFAIL);
 			return (-1);
@@ -1020,7 +1031,7 @@ session_connect(struct peer *peer)
 	session_socket_blockmode(peer->fd, BM_NONBLOCK);
 
 	sa = addr2sa(&peer->conf.remote_addr, BGP_PORT);
-	if (connect(peer->fd, sa, sa->sa_len) == -1) {
+	if (connect(peer->fd, sa, SA_LEN(sa)) == -1) {
 		if (errno != EINPROGRESS) {
 			if (errno != peer->lasterr)
 				log_peer_warn(&peer->conf, "connect");
@@ -1067,7 +1078,7 @@ session_setup_socket(struct peer *p)
 		    "session_setup_socket setsockopt TCP_NODELAY");
 		return (-1);
 	}
-
+#if 0
 	/* set precedence, see rfc1771 appendix 5 */
 	if (p->sa_remote.ss_family == AF_INET &&
 	    setsockopt(p->fd, IPPROTO_IP, IP_TOS, &pre, sizeof(pre)) == -1) {
@@ -1075,6 +1086,7 @@ session_setup_socket(struct peer *p)
 		    "session_setup_socket setsockopt TOS");
 		return (-1);
 	}
+#endif
 
 	/* only increase bufsize (and thus window) if md5 or ipsec is in use */
 	if (p->conf.auth.method != AUTH_NONE) {
@@ -2604,13 +2616,17 @@ addr2sa(struct bgpd_addr *addr, u_int16_t port)
 	switch (addr->af) {
 	case AF_INET:
 		sa_in->sin_family = AF_INET;
+#ifdef HAVE_STRUCT_SOCKADDR_IN_SIN_LEN
 		sa_in->sin_len = sizeof(struct sockaddr_in);
+#endif
 		sa_in->sin_addr.s_addr = addr->v4.s_addr;
 		sa_in->sin_port = htons(port);
 		break;
 	case AF_INET6:
 		sa_in6->sin6_family = AF_INET6;
+#ifdef HAVE_STRUCT_SOCKADDR_IN_SIN6_LEN
 		sa_in6->sin6_len = sizeof(struct sockaddr_in6);
+#endif
 		memcpy(&sa_in6->sin6_addr, &addr->v6,
 		    sizeof(sa_in6->sin6_addr));
 		sa_in6->sin6_port = htons(port);
