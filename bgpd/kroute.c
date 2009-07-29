@@ -754,6 +754,7 @@ kif_kr_remove(struct kroute_node *kr)
 int
 kroute_validate(struct kroute *kr)
 {
+#if 0
 	struct kif_node		*kif;
 
 	if (kr->flags & F_DOWN)
@@ -764,9 +765,12 @@ kroute_validate(struct kroute *kr)
 		    "referenced from route for %s/%u",
 		    kr->ifindex, inet_ntoa(kr->prefix),
 		    kr->prefixlen);
+#endif
 		return (1);
+#if 0
 	} else
 		return (kif->k.link_state != LINK_STATE_DOWN);
+#endif
 }
 
 void
