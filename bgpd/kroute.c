@@ -143,8 +143,11 @@ int		send_rt6msg(int, int, struct kroute6 *);
 int		dispatch_rtmsg(void);
 int		fetchtable(u_int, int);
 int		fetchifs(int);
+#if 0
 int		dispatch_rtmsg_addr(struct rt_msghdr *,
 		    struct sockaddr *[RTAX_MAX], int);
+		    struct sockaddr *[RTAX_MAX]);
+#endif
 
 RB_HEAD(kroute_tree, kroute_node)	krt;
 RB_PROTOTYPE(kroute_tree, kroute_node, entry, kroute_compare)
@@ -312,6 +315,7 @@ kr_delete(struct kroute_label *kl)
 int
 kr6_change(struct kroute6_label *kl)
 {
+#if 0
 	struct kroute6_node	*kr6;
 	int			 action = RTM_ADD;
 	struct in6_addr		 lo6 = IN6ADDR_LOOPBACK_INIT;
@@ -365,12 +369,14 @@ kr6_change(struct kroute6_label *kl)
 			kr6->r.flags &= ~F_REJECT;
 	}
 
+#endif
 	return (0);
 }
 
 int
 kr6_delete(struct kroute6_label *kl)
 {
+#if 0
 	struct kroute6_node	*kr6;
 
 	if ((kr6 = kroute6_find(&kl->kr.prefix, kl->kr.prefixlen, RTP_BGP))
@@ -392,6 +398,7 @@ kr6_delete(struct kroute6_label *kl)
 	if (kroute6_remove(kr6) == -1)
 		return (-1);
 
+#endif
 	return (0);
 }
 
@@ -1744,8 +1751,7 @@ mask2prefixlen6(struct sockaddr_in6 *sa_in6)
 	 * sin6_len is the size of the sockaddr so substract the offset of
 	 * the possibly truncated sin6_addr struct.
 	 */
-	len = sa_in6->sin6_len -
-	    (u_int8_t)(&((struct sockaddr_in6 *)NULL)->sin6_addr);
+	len = sizeof(struct in6_addr);
 	for (i = 0; i < len; i++) {
 		/* this "beauty" is adopted from sbin/route/show.c ... */
 		switch (sa_in6->sin6_addr.s6_addr[i]) {
@@ -2076,6 +2082,7 @@ retry:
 int
 send_rt6msg(int fd, int action, struct kroute6 *kroute)
 {
+#if 0
 	struct iovec		iov[5];
 	struct rt_msghdr	hdr;
 	struct pad {
@@ -2186,6 +2193,7 @@ retry:
 		}
 	}
 
+#endif
 	return (0);
 }
 
@@ -2505,6 +2513,7 @@ dispatch_rtmsg(void)
 	return (0);
 }
 
+#if 0
 int
 dispatch_rtmsg_addr(struct rt_msghdr *rtm, struct sockaddr *rti_info[RTAX_MAX],
     int connected_only)
@@ -2774,3 +2783,4 @@ add6:
 
 	return (0);
 }
+#endif
