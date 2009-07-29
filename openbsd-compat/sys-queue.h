@@ -1,6 +1,6 @@
 /* OPENBSD ORIGINAL: sys/sys/queue.h */
 
-/*	$OpenBSD: queue.h,v 1.25 2004/04/08 16:08:21 henning Exp $	*/
+/*	$OpenBSD: queue.h,v 1.27 2005/02/25 13:29:30 deraadt Exp $	*/
 /*	$NetBSD: queue.h,v 1.11 1996/05/16 05:17:14 mycroft Exp $	*/
 
 /*
@@ -229,10 +229,10 @@ struct {								\
 #define SLIST_REMOVE(head, elm, type, field) do {			\
 	if ((head)->slh_first == (elm)) {				\
 		SLIST_REMOVE_HEAD((head), field);			\
-	}								\
-	else {								\
+	} else {							\
 		struct type *curelm = (head)->slh_first;		\
-		while( curelm->field.sle_next != (elm) )		\
+									\
+		while (curelm->field.sle_next != (elm))			\
 			curelm = curelm->field.sle_next;		\
 		curelm->field.sle_next =				\
 		    curelm->field.sle_next->field.sle_next;		\
@@ -369,8 +369,8 @@ struct {								\
 	(listelm)->field.sqe_next = (elm);				\
 } while (0)
 
-#define SIMPLEQ_REMOVE_HEAD(head, elm, field) do {			\
-	if (((head)->sqh_first = (elm)->field.sqe_next) == NULL)	\
+#define SIMPLEQ_REMOVE_HEAD(head, field) do {			\
+	if (((head)->sqh_first = (head)->sqh_first->field.sqe_next) == NULL) \
 		(head)->sqh_last = &(head)->sqh_first;			\
 } while (0)
 
