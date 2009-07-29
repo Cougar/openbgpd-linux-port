@@ -25,7 +25,12 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <net/if.h>
+#ifdef NET_PFKEYV2_H
 #include <net/pfkeyv2.h>
+#endif
+
+#include "sys-queue.h"
+#include "defines.h"
 
 #include <poll.h>
 #include <stdarg.h>
@@ -35,7 +40,7 @@
 #define	BGP_VERSION			4
 #define	BGP_PORT			179
 #define	CONFFILE			"/etc/bgpd.conf"
-#define	BGPD_USER			"_bgpd"
+#define	BGPD_USER			"bgpd"
 #define	PEER_DESCR_LEN			32
 #define	PFTABLE_LEN			16
 #define	TCP_MD5_KEY_LEN			80
