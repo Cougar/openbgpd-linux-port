@@ -21,8 +21,8 @@
 
 #include <sys/types.h>
 #include <sys/queue.h>
-#include <sys/tree.h>
 
+#include "sys-tree.h"
 #include "bgpd.h"
 
 /* rde internal structures */
