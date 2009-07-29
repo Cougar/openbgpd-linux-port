@@ -41,7 +41,7 @@ enum neighbor_views {
 	NV_TIMERS
 };
 
-__dead void	 usage(void);
+void		 usage(void);
 int		 main(int, char *[]);
 char		*fmt_peer(const struct peer_config *, int);
 void		 show_summary_head(void);
@@ -59,10 +59,12 @@ int		 show_fib_msg(struct imsg *);
 void		 show_nexthop_head(void);
 int		 show_nexthop_msg(struct imsg *);
 void		 show_interface_head(void);
+#if 0
 int		 ift2ifm(int);
 const char *	 get_media_descr(int);
 const char *	 get_linkstate(int, int);
 void		 print_baudrate(u_long);
+#endif
 //int		 show_interface_msg(struct imsg *);
 void		 show_rib_summary_head(void);
 void		 print_prefix(struct bgpd_addr *, u_int8_t, u_int8_t);
@@ -71,7 +73,7 @@ int		 show_rib_summary_msg(struct imsg *);
 
 struct imsgbuf	*ibuf;
 
-__dead void
+void
 usage(void)
 {
 	extern char	*__progname;
@@ -690,6 +692,7 @@ show_nexthop_msg(struct imsg *imsg)
 			printf("%-8s", p->kif.ifname);
 			if (p->kif.flags & IFF_UP) {
 				printf("UP");
+#if 0
 				ifms_type = ift2ifm(p->kif.media_type);
 				if (ifms_type != 0)
 					printf(", %s, %s",
@@ -700,6 +703,7 @@ show_nexthop_msg(struct imsg *imsg)
 					printf(", ");
 					print_baudrate(p->kif.baudrate);
 				}
+#endif
 			}
 		}
 		printf("\n");
