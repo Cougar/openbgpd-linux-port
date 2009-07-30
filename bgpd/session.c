@@ -440,12 +440,6 @@ session_main(struct bgpd_config *config, struct peer *cpeers,
 						    Timer_IdleHoldReset,
 						    p->IdleHoldTime);
 					break;
-				case Timer_CarpUndemote:
-					timer_stop(p, Timer_CarpUndemote);
-					if (p->demoted &&
-					    p->state == STATE_ESTABLISHED)
-						session_demote(p, -1);
-					break;
 				default:
 					fatalx("King Bula lost in time");
 				}
@@ -453,6 +447,17 @@ session_main(struct bgpd_config *config, struct peer *cpeers,
 			if ((nextaction = timer_nextduein(p)) != -1 &&
 			    nextaction < timeout)
 				timeout = nextaction;
+
+			/* XXX carp demotion */
+			if (p->demoted && p->state == STATE_ESTABLISHED) {
+				if (time(NULL) - p->stats.last_updown >=
+				    INTERVAL_HOLD_DEMOTED)
+					session_demote(p, -1);
+				if (p->stats.last_updown + INTERVAL_HOLD_DEMOTED
+				    - time(NULL) < timeout)
+					timeout = p->stats.last_updown +
+					    INTERVAL_HOLD_DEMOTED - time(NULL);
+			}
 
 			/* are we waiting for a write? */
 			events = POLLIN;
@@ -942,9 +947,6 @@ change_state(struct peer *peer, enum session_state state,
 		break;
 	case STATE_ESTABLISHED:
 		timer_set(peer, Timer_IdleHoldReset, peer->IdleHoldTime);
-		if (peer->demoted)
-			timer_set(peer, Timer_CarpUndemote,
-			    INTERVAL_HOLD_DEMOTED);
 		session_up(peer);
 		break;
 	default:		/* something seriously fucked */
