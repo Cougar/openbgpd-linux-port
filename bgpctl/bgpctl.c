@@ -1,4 +1,4 @@
-/*	$OpenBSD: bgpctl.c,v 1.110 2006/08/28 05:28:49 henning Exp $ */
+/*	$OpenBSD: bgpctl.c,v 1.117 2007/03/03 12:43:08 henning Exp $ */
 
 /*
  * Copyright (c) 2003 Henning Brauer <henning@openbsd.org>
@@ -36,6 +36,7 @@
 #include "rde.h"
 #include "log.h"
 #include "parser.h"
+#include "irrfilter.h"
 
 enum neighbor_views {
 	NV_DEFAULT,
@@ -91,7 +92,7 @@ usage(void)
 {
 	extern char	*__progname;
 
-	fprintf(stderr, "usage: %s [-s socket] [-n] "
+	fprintf(stderr, "usage: %s [-s socket] [-o path] [-n] "
 	    "<command> [arg [...]]\n", __progname);
 	exit(1);
 }
@@ -106,15 +107,19 @@ main(int argc, char *argv[])
 	struct parse_result	*res;
 	struct ctl_neighbor	 neighbor;
 	struct ctl_show_rib_request	ribreq;
-	char			*sockname;
+	char			*sockname, *outdir;
 	enum imsg_type		 type;
 
 	sockname = SOCKET_NAME;
-	while ((ch = getopt(argc, argv, "ns:")) != -1) {
+	outdir = getcwd(NULL, 0);
+	while ((ch = getopt(argc, argv, "no:s:")) != -1) {
 		switch (ch) {
 		case 'n':
 			if (++nodescr > 1)
 				usage();
+			break;
+		case 'o':
+			outdir = optarg;
 			break;
 		case 's':
 			sockname = optarg;
@@ -129,6 +134,9 @@ main(int argc, char *argv[])
 
 	if ((res = parse(argc, argv)) == NULL)
 		exit(1);
+
+	if (res->action == IRRFILTER)
+		irr_main(res->as.as, res->flags, outdir);
 
 	memcpy(&neighbor.addr, &res->peeraddr, sizeof(neighbor.addr));
 	strlcpy(neighbor.descr, res->peerdesc, sizeof(neighbor.descr));
@@ -151,6 +159,7 @@ main(int argc, char *argv[])
 
 	switch (res->action) {
 	case NONE:
+	case IRRFILTER:
 		usage();
 		/* not reached */
 	case SHOW:
@@ -358,6 +367,7 @@ main(int argc, char *argv[])
 			case NETWORK_ADD:
 			case NETWORK_REMOVE:
 			case NETWORK_FLUSH:
+			case IRRFILTER:
 				break;
 			}
 			imsg_free(&imsg);
@@ -429,7 +439,9 @@ show_summary_msg(struct imsg *imsg, int nodescr)
 			printf("%6u", p->stats.prefix_cnt);
 			if (p->conf.max_prefix != 0)
 				printf("/%u", p->conf.max_prefix);
-		} else
+		} else if (p->conf.template)
+			printf("Template");
+		else
 			printf("%s", statenames[p->state]);
 		printf("\n");
 		free(s);
@@ -455,7 +467,7 @@ show_summary_terse_msg(struct imsg *imsg, int nodescr)
 		s = fmt_peer(p->conf.descr, &p->conf.remote_addr,
 		    p->conf.remote_masklen, nodescr);
 		printf("%s %u %s\n", s, p->conf.remote_as,
-		    statenames[p->state]);
+		    p->conf.template ? "Template" : statenames[p->state]);
 		free(s);
 		break;
 	case IMSG_CTL_END:
@@ -486,7 +498,8 @@ show_neighbor_msg(struct imsg *imsg, enum neighbor_views nv)
 			    p->conf.remote_masklen) == -1)
 				err(1, NULL);
 		} else
-			if ((s = strdup(log_addr(&p->conf.remote_addr))) == NULL)
+			if ((s = strdup(log_addr(&p->conf.remote_addr))) ==
+			    NULL)
 				err(1, "strdup");
 
 		ina.s_addr = p->remote_bgpid;
@@ -515,7 +528,7 @@ show_neighbor_msg(struct imsg *imsg, enum neighbor_views nv)
 		    fmt_timeframe(p->stats.last_read),
 		    p->holdtime, p->holdtime/3);
 		if (p->capa.peer.mp_v4 || p->capa.peer.mp_v6 ||
-		    p->capa.peer.refresh) {
+		    p->capa.peer.refresh || p->capa.peer.restart) {
 			printf("  Neighbor capabilities:\n");
 			if (p->capa.peer.mp_v4) {
 				printf("    Multiprotocol extensions: IPv4");
@@ -914,7 +927,9 @@ get_linkstate(int media_type, int link_state)
 			if (p->ifms_type != media_type ||
 			    p->ifms_valid != ifm_status_valid_list[i])
 				continue;
-			return (p->ifms_string[link_state == LINK_STATE_UP]);
+			if (LINK_STATE_IS_UP(link_state))
+				return (p->ifms_string[1]);
+			return (p->ifms_string[0]);
 		}
 
 	return ("unknown link state");
@@ -1162,7 +1177,7 @@ fmt_mem(int64_t num)
 	static char	buf[16];
 
 	if (fmt_scaled(num, buf) == -1)
-		snprintf(buf, sizeof(buf), "%lldB", num);
+		snprintf(buf, sizeof(buf), "%lldB", (long long)num);
 
 	return (buf);
 }
@@ -1177,28 +1192,29 @@ show_rib_memory_msg(struct imsg *imsg)
 		memcpy(&stats, imsg->data, sizeof(stats));
 		printf("RDE memory statistics\n");
 		printf("%10lld IPv4 network entries using %s of memory\n",
-		    stats.pt4_cnt, fmt_mem(stats.pt4_cnt *
+		    (long long)stats.pt4_cnt, fmt_mem(stats.pt4_cnt *
 		    sizeof(struct pt_entry4)));
 		if (stats.pt6_cnt != 0)
 			printf("%10lld IPv6 network entries using "
-			    "%s of memory\n", stats.pt6_cnt,
+			    "%s of memory\n", (long long)stats.pt6_cnt,
 			    fmt_mem(stats.pt6_cnt * sizeof(struct pt_entry6)));
 		printf("%10lld prefix entries using %s of memory\n",
-		    stats.prefix_cnt, fmt_mem(stats.prefix_cnt *
+		    (long long)stats.prefix_cnt, fmt_mem(stats.prefix_cnt *
 		    sizeof(struct prefix)));
 		printf("%10lld BGP path attribute entries using %s of memory\n",
-		    stats.path_cnt, fmt_mem(stats.path_cnt *
+		    (long long)stats.path_cnt, fmt_mem(stats.path_cnt *
 		    sizeof(struct rde_aspath)));
 		printf("%10lld BGP AS-PATH attribute entries using "
 		    "%s of memory,\n\t   and holding %lld references\n",
-		    stats.aspath_cnt, fmt_mem(stats.aspath_size),
-		    stats.aspath_refs);
+		    (long long)stats.aspath_cnt, fmt_mem(stats.aspath_size),
+		    (long long)stats.aspath_refs);
 		printf("%10lld BGP attributes entries using %s of memory\n",
-		    stats.attr_cnt, fmt_mem(stats.attr_cnt *
+		    (long long)stats.attr_cnt, fmt_mem(stats.attr_cnt *
 		    sizeof(struct attr)));
-		printf("\t   and holding %lld references\n", stats.attr_refs);
+		printf("\t   and holding %lld references\n",
+		    (long long)stats.attr_refs);
 		printf("%10lld BGP attributes using %s of memory\n",
-		    stats.attr_dcnt, fmt_mem(stats.attr_data));
+		    (long long)stats.attr_dcnt, fmt_mem(stats.attr_data));
 		printf("RIB using %s of memory\n", fmt_mem(
 		    stats.pt4_cnt * sizeof(struct pt_entry4) +
 		    stats.pt6_cnt * sizeof(struct pt_entry6) +
