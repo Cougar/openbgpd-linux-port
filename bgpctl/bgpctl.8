@@ -1,4 +1,4 @@
-.\" $OpenBSD: bgpctl.8,v 1.27 2005/07/09 07:53:25 jmc Exp $
+.\" $OpenBSD: bgpctl.8,v 1.31 2006/01/04 12:37:33 claudio Exp $
 .\"
 .\" Copyright (c) 2003 Henning Brauer <henning@openbsd.org>
 .\"
@@ -77,8 +77,14 @@ Add the specified prefix to the list of announced networks.
 Remove the specified prefix from the list of announced networks.
 .It Cm network flush
 Remove all dynamically added prefixes from the list of announced networks.
-.It Cm network show
+.It Cm network show Ar family
 Show all announced networks.
+.Ar family ,
+if given, limits the output to the given address family.
+The supported families are
+.Em inet
+and
+.Em inet6 .
 .It Cm reload
 Reload the configuration file.
 .It Cm show fib Ar filter
@@ -154,6 +160,10 @@ Show all entries that are internal routes with no AS's in the AS path.
 This is the same as the
 .Ic show summary
 command.
+.It Cm memory
+Show RIB memory statistics.
+.It Ar family
+Limit the output to the given address family.
 .El
 .It Cm show summary
 Show a list of all neighbors, including information about the session state
