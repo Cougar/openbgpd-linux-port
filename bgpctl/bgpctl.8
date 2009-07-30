@@ -1,4 +1,4 @@
-.\" $OpenBSD: bgpctl.8,v 1.37 2006/08/29 10:13:10 jmc Exp $
+.\" $OpenBSD: bgpctl.8,v 1.42 2007/03/07 11:55:54 henning Exp $
 .\"
 .\" Copyright (c) 2003 Henning Brauer <henning@openbsd.org>
 .\"
@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd December 22, 2003
+.Dd March 3, 2007
 .Dt BGPCTL 8
 .Os
 .Sh NAME
@@ -23,6 +23,7 @@
 .Sh SYNOPSIS
 .Nm bgpctl
 .Op Fl n
+.Op Fl o Ar directory
 .Op Fl s Ar socket
 .Ar command
 .Op Ar arguments ...
@@ -42,6 +43,10 @@ The options are as follows:
 .Bl -tag -width Ds
 .It Fl n
 Show neighbors' IP addresses instead of their description.
+.It Fl o Ar directory
+Use
+.Ar directory
+to write the filter files to in irrfilter mode.
 .It Fl s Ar socket
 Use
 .Ar socket
@@ -59,6 +64,18 @@ a.k.a. the kernel routing table.
 .It Cm fib decouple
 Remove the learned routes from the Forwarding Information Base
 a.k.a. the kernel routing table.
+.It Xo
+.Cm irrfilter
+.Ar as
+.Op Ar options
+.Xc
+Get the
+.Em aut-num
+object from the
+.Em Internet Routing Registry
+and generate bgpd filters from the policy specified therein.
+The aut-num object as well as the associated as-set and route objects
+have to be in RPSL format.
 .It Cm neighbor Ar peer Cm up
 Take the BGP session to the specified neighbor up.
 .Ar peer
@@ -164,6 +181,10 @@ as rightmost AS.
 Show all entries with
 .Ar as
 anywhere but rightmost.
+.It Cm peer-as Ar as
+Show all entries with
+.Ar as
+as leftmost AS.
 .It Cm empty-as
 Show all entries that are internal routes with no AS's in the AS path.
 .It Cm neighbor Ar peer
@@ -206,17 +227,30 @@ Show a list of all neighbors, including information about the session state
 and message counters.
 .El
 .Sh FILES
-.Bl -tag -width "/etc/bgpd.conf" -compact
+.Bl -tag -width "/var/run/bgpd.sockXXX" -compact
 .It Pa /etc/bgpd.conf
 default
 .Xr bgpd 8
 configuration file
+.It Pa /var/run/bgpd.sock
+default
+.Xr bgpd 8
+control socket
 .El
 .Sh SEE ALSO
 .Xr bgpd.conf 5 ,
-.Xr bgpd 8
+.Xr bgpd 8 ,
+.Xr bgplg 8 ,
+.Xr bgplgsh 8
+.Rs
+.%R RFC 2622
+.%T "Routing Policy Specification Language (RPSL)"
+.%D June 1999
+.Re
 .Sh HISTORY
 The
 .Nm
 program first appeared in
 .Ox 3.5 .
+irrfilter mode was added in
+.Ox 4.1 .
