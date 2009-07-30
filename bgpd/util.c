@@ -46,7 +46,6 @@ log_in6addr(const struct in6_addr *addr)
 	u_int16_t		tmp16;
 
 	bzero(&sa_in6, sizeof(sa_in6));
-	sa_in6.sin6_len = sizeof(sa_in6);
 	sa_in6.sin6_family = AF_INET6;
 	memcpy(&sa_in6.sin6_addr, addr, sizeof(sa_in6.sin6_addr));
 
@@ -67,7 +66,7 @@ log_sockaddr(struct sockaddr *sa)
 {
 	static char	buf[NI_MAXHOST];
 
-	if (getnameinfo(sa, sa->sa_len, buf, sizeof(buf), NULL, 0,
+	if (getnameinfo(sa, SA_LEN(sa), buf, sizeof(buf), NULL, 0,
 	    NI_NUMERICHOST))
 		return ("(unknown)");
 	else
