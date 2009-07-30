@@ -528,11 +528,13 @@ conf_main	: AS as4number		{
 			free($4);
 		}
 		| RTABLE number {
+#if 0
 			if ($2 > RT_TABLEID_MAX || $2 < 0) {
 				yyerror("invalid rtable id");
 				YYERROR;
 			}
 			conf->rtableid = $2;
+#endif
 		}
 		;
 
