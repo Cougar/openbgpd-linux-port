@@ -195,3 +195,18 @@ typedef int socklen_t;
     defined(HAVE_STRUCT_SOCKADDR_STORAGE___SS_FAMILY)
 # define ss_family __ss_family
 #endif
+
+/* Necessary OpenBSD definitions from systemwide .h files */
+size_t	strlcat(char *, const char *, size_t);
+size_t	strlcpy(char *, const char *, size_t);
+
+long long
+        strtonum(const char *, long long, long long, const char **);
+
+void	*bsearch(const void *, const void *, size_t, size_t,
+            int (*)(const void *, const void *));
+
+void	setproctitle(const char *, ...);
+
+#include <stdlib.h>
+#include <time.h>
