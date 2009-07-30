@@ -134,11 +134,8 @@ main(int argc, char *argv[])
 	peer_l = NULL;
 	conf.csock = SOCKET_NAME;
 
-	while ((ch = getopt(argc, argv, "cdD:f:nr:s:v")) != -1) {
+	while ((ch = getopt(argc, argv, "dD:f:nr:s:v")) != -1) {
 		switch (ch) {
-		case 'c':
-			conf.opts |= BGPD_OPT_FORCE_DEMOTE;
-			break;
 		case 'd':
 			debug = 1;
 			break;
@@ -387,7 +384,6 @@ main(int argc, char *argv[])
 	free(rules_l);
 	control_cleanup(conf.csock);
 	control_cleanup(conf.rcsock);
-	carp_demote_shutdown();
 	kr_shutdown();
 //	pftable_clear_all();
 	free(conf.listen_addrs);
@@ -659,19 +655,6 @@ dispatch_imsg(struct imsgbuf *ibuf, int idx)
 				log_warnx("IFINFO request with wrong len");
 			else
 				kr_ifinfo(imsg.data);
-			break;
-		case IMSG_DEMOTE:
-			if (idx != PFD_PIPE_SESSION)
-				log_warnx("demote request not from SE");
-			else if (imsg.hdr.len != IMSG_HEADER_SIZE +
-			    sizeof(struct demote_msg))
-				log_warnx("DEMOTE request with wrong len");
-			else {
-				struct demote_msg	*msg;
-
-				msg = imsg.data;
-				carp_demote_set(msg->demote_group, msg->level);
-			}
 			break;
 		default:
 			break;
