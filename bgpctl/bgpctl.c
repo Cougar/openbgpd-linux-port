@@ -74,6 +74,8 @@ int		 show_rib_summary_msg(struct imsg *);
 void		 send_filterset(struct imsgbuf *, struct filter_set_head *);
 static const char	*get_errstr(u_int8_t, u_int8_t);
 
+struct rde_memstats	rdemem;
+
 struct imsgbuf	*ibuf;
 
 void
