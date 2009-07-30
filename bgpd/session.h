@@ -26,7 +26,6 @@
 #define	INTERVAL_HOLD			90
 #define	INTERVAL_IDLE_HOLD_INITIAL	30
 #define	INTERVAL_HOLD_CLONED		3600
-#define	INTERVAL_HOLD_DEMOTED		60
 #define	MAX_IDLE_HOLD			3600
 #define	MSGSIZE_HEADER			19
 #define	MSGSIZE_HEADER_MARKER		16
@@ -198,7 +197,6 @@ struct peer {
 	u_int16_t		 short_as;
 	u_int16_t		 holdtime;
 	u_int8_t		 depend_ok;
-	u_int8_t		 demoted;
 	u_int8_t		 passive;
 };
 
@@ -253,9 +251,3 @@ int	pfkey_init(struct bgpd_sysdep *);
 /* printconf.c */
 void	print_config(struct bgpd_config *, struct network_head *, struct peer *,
 	    struct filter_head *, struct mrt_head *);
-
-/* carp.c */
-int	 carp_demote_init(char *, int);
-void	 carp_demote_shutdown(void);
-int	 carp_demote_get(char *);
-int	 carp_demote_set(char *, int);
