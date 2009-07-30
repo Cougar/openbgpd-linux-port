@@ -1,4 +1,4 @@
-/*	$OpenBSD: bgpctl.c,v 1.134 2008/06/07 20:23:15 henning Exp $ */
+/*	$OpenBSD: bgpctl.c,v 1.138 2009/02/01 17:21:21 sobrado Exp $ */
 
 /*
  * Copyright (c) 2003 Henning Brauer <henning@openbsd.org>
@@ -94,8 +94,8 @@ usage(void)
 {
 	extern char	*__progname;
 
-	fprintf(stderr, "usage: %s [-n] [-s socket] "
-	    "command [arguments ...]\n", __progname);
+	fprintf(stderr, "usage: %s [-n] [-s socket] command [argument ...]\n",
+	    __progname);
 	exit(1);
 }
 
@@ -417,7 +417,7 @@ fmt_peer(const char *descr, const struct bgpd_addr *remote_addr,
 void
 show_summary_head(void)
 {
-	printf("%-20s %-8s %-10s %-10s %-5s %-8s %s\n", "Neighbor", "AS",
+	printf("%-20s %8s %10s %10s %5s %-8s %s\n", "Neighbor", "AS",
 	    "MsgRcvd", "MsgSent", "OutQ", "Up/Down", "State/PrfRcvd");
 }
 
@@ -745,7 +745,7 @@ show_fib_head(void)
 	printf("flags: * = valid, B = BGP, C = Connected, S = Static\n");
 	printf("       N = BGP Nexthop reachable via this route\n");
 	printf("       r = reject route, b = blackhole route\n\n");
-	printf("flags destination          gateway\n");
+	printf("flags prio destination          gateway\n");
 }
 
 void
@@ -808,7 +808,7 @@ show_fib_msg(struct imsg *imsg)
 		if (asprintf(&p, "%s/%u", inet_ntoa(k->prefix), k->prefixlen) ==
 		    -1)
 			err(1, NULL);
-		printf("%-20s ", p);
+		printf("%4i %-20s ", k->priority, p);
 		free(p);
 
 		if (k->nexthop.s_addr)
@@ -829,7 +829,7 @@ show_fib_msg(struct imsg *imsg)
 		if (asprintf(&p, "%s/%u", log_in6addr(&k6->prefix),
 		    k6->prefixlen) == -1)
 			err(1, NULL);
-		printf("%-20s ", p);
+		printf("%4i %-20s ", k6->priority, p);
 		free(p);
 
 		if (!IN6_IS_ADDR_UNSPECIFIED(&k6->nexthop))
@@ -1196,8 +1196,8 @@ show_rib_detail_msg(struct imsg *imsg, int nodescr)
 		case ATTR_AGGREGATOR:
 			memcpy(&as, data, sizeof(as));
 			memcpy(&id, data + sizeof(as), sizeof(id));
-			printf("    Aggregator: %s [%s]\n", log_as(as),
-			   inet_ntoa(id));
+			printf("    Aggregator: %s [%s]\n", 
+			    log_as(htonl(as)), inet_ntoa(id));
 			break;
 		case ATTR_ORIGINATOR_ID:
 			memcpy(&id, data, sizeof(id));
