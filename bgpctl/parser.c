@@ -1,4 +1,4 @@
-/*	$OpenBSD: parser.c,v 1.32 2006/06/14 17:06:44 claudio Exp $ */
+/*	$OpenBSD: parser.c,v 1.34 2006/08/23 08:21:11 claudio Exp $ */
 
 /*
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
@@ -37,6 +37,7 @@ enum token_type {
 	ENDTOKEN,
 	KEYWORD,
 	ADDRESS,
+	PEERADDRESS,
 	FLAG,
 	ASNUM,
 	ASTYPE,
@@ -64,7 +65,8 @@ static const struct token t_main[];
 static const struct token t_show[];
 static const struct token t_show_summary[];
 static const struct token t_show_fib[];
-static const struct token t_show_rib[];
+static const struct token t_show_rib[]; 
+static const struct token t_show_rib_neigh[]; 
 static const struct token t_show_neighbor[];
 static const struct token t_show_neighbor_modifiers[];
 static const struct token t_fib[];
@@ -127,21 +129,30 @@ static const struct token t_show_fib[] = {
 
 static const struct token t_show_rib[] = {
 	{ NOTOKEN,	"",		NONE,		NULL},
-	{ PREFIX,	"",		NONE,		t_show_prefix},
 	{ ASTYPE,	"as",		AS_ALL,		t_show_as},
 	{ ASTYPE,	"source-as",	AS_SOURCE,	t_show_as},
 	{ ASTYPE,	"transit-as",	AS_TRANSIT,	t_show_as},
-	{ ASTYPE,	"empty-as",	AS_EMPTY,	NULL},
-	{ KEYWORD,	"summary",	SHOW_SUMMARY,	NULL},
+	{ ASTYPE,	"empty-as",	AS_EMPTY,	t_show_rib},
 	{ FLAG,		"detail",	F_CTL_DETAIL,	t_show_rib},
+	{ FLAG,		"in",		F_CTL_ADJ_IN,	t_show_rib},
+	{ FLAG,		"out",		F_CTL_ADJ_OUT,	t_show_rib},
+	{ KEYWORD,	"neighbor",	NONE,		t_show_rib_neigh},
+	{ KEYWORD,	"summary",	SHOW_SUMMARY,	NULL},
 	{ KEYWORD,	"memory",	SHOW_RIB_MEM,	NULL},
-	{ FAMILY,	"",		NONE,		NULL},
+	{ FAMILY,	"",		NONE,		t_show_rib},
+	{ PREFIX,	"",		NONE,		t_show_prefix},
 	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_show_rib_neigh[] = {
+	{ PEERADDRESS,	"",		NONE,	t_show_rib},
+	{ PEERDESC,	"",		NONE,	t_show_rib},
+	{ ENDTOKEN,	"",		NONE,	NULL}
 };
 
 static const struct token t_show_neighbor[] = {
 	{ NOTOKEN,	"",		NONE,	NULL},
-	{ ADDRESS,	"",		NONE,	t_show_neighbor_modifiers},
+	{ PEERADDRESS,	"",		NONE,	t_show_neighbor_modifiers},
 	{ PEERDESC,	"",		NONE,	t_show_neighbor_modifiers},
 	{ ENDTOKEN,	"",		NONE,	NULL}
 };
@@ -160,7 +171,7 @@ static const struct token t_fib[] = {
 };
 
 static const struct token t_neighbor[] = {
-	{ ADDRESS,	"",		NONE,		t_neighbor_modifiers},
+	{ PEERADDRESS,	"",		NONE,		t_neighbor_modifiers},
 	{ PEERDESC,	"",		NONE,		t_neighbor_modifiers},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
@@ -174,7 +185,7 @@ static const struct token t_neighbor_modifiers[] = {
 };
 
 static const struct token t_show_as[] = {
-	{ ASNUM,	"",		NONE,		NULL},
+	{ ASNUM,	"",		NONE,		t_show_rib},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -367,6 +378,14 @@ match_token(const char *word, const struct token table[])
 					res.action = t->value;
 			}
 			break;
+		case PEERADDRESS:
+			if (parse_addr(word, &res.peeraddr)) {
+				match++;
+				t = &table[i];
+				if (t->value)
+					res.action = t->value;
+			}
+			break;
 		case PREFIX:
 			if (parse_prefix(word, &res.addr, &res.prefixlen)) {
 				match++;
@@ -471,6 +490,7 @@ show_valid_args(const struct token table[])
 			fprintf(stderr, "  %s\n", table[i].keyword);
 			break;
 		case ADDRESS:
+		case PEERADDRESS:
 			fprintf(stderr, "  <address>\n");
 			break;
 		case PREFIX:
