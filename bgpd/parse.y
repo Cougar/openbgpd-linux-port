@@ -163,7 +163,7 @@ typedef struct {
 %token	RDE RIB EVALUATE IGNORE COMPARE
 %token	GROUP NEIGHBOR NETWORK
 %token	REMOTEAS DESCR LOCALADDR MULTIHOP PASSIVE MAXPREFIX RESTART
-%token	ANNOUNCE DEMOTE CONNECTRETRY
+%token	ANNOUNCE CONNECTRETRY
 %token	ENFORCE NEIGHBORAS CAPABILITIES REFLECTOR DEPEND DOWN SOFTRECONFIG
 %token	DUMP IN OUT
 %token	LOG ROUTECOLL TRANSPARENT
@@ -1116,24 +1116,6 @@ peeropts	: REMOTEAS as4number	{
 			}
 			free($3);
 		}
-		| DEMOTE STRING		{
-			if (strlcpy(curpeer->conf.demote_group, $2,
-			    sizeof(curpeer->conf.demote_group)) >=
-			    sizeof(curpeer->conf.demote_group)) {
-				yyerror("demote group name \"%s\" too long: "
-				    "max %u", $2,
-				    sizeof(curpeer->conf.demote_group) - 1);
-				free($2);
-				YYERROR;
-			}
-			free($2);
-			if (carp_demote_init(curpeer->conf.demote_group,
-			    conf->opts & BGPD_OPT_FORCE_DEMOTE) == -1) {
-				yyerror("error initializing group \"%s\"",
-				    curpeer->conf.demote_group);
-				YYERROR;
-			}
-		}
 		| SOFTRECONFIG inout yesno {
 			if ($2)
 				curpeer->conf.softreconfig_in = $3;
@@ -1890,7 +1872,6 @@ lookup(char *s)
 		{ "connect-retry",	CONNECTRETRY},
 		{ "connected",		CONNECTED},
 		{ "delete",		DELETE},
-		{ "demote",		DEMOTE},
 		{ "deny",		DENY},
 		{ "depend",		DEPEND},
 		{ "descr",		DESCR},

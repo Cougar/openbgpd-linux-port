@@ -58,7 +58,6 @@
 #define	BGPD_OPT_VERBOSE		0x0001
 #define	BGPD_OPT_VERBOSE2		0x0002
 #define	BGPD_OPT_NOACTION		0x0004
-#define	BGPD_OPT_FORCE_DEMOTE		0x0008
 
 #define	BGPD_FLAG_NO_FIB_UPDATE		0x0001
 #define	BGPD_FLAG_NO_EVALUATE		0x0002
@@ -226,7 +225,6 @@ struct peer_config {
 	char			 descr[PEER_DESCR_LEN];
 	char			 rib[PEER_DESCR_LEN];
 	char			 if_depend[IFNAMSIZ];
-	char			 demote_group[IFNAMSIZ];
 	u_int32_t		 id;
 	u_int32_t		 groupid;
 	u_int32_t		 remote_as;
@@ -327,13 +325,7 @@ enum imsg_type {
 	IMSG_PFTABLE_REMOVE,
 	IMSG_PFTABLE_COMMIT,
 	IMSG_REFRESH,
-	IMSG_IFINFO,
-	IMSG_DEMOTE
-};
-
-struct demote_msg {
-	char		 demote_group[IFNAMSIZ];
-	int		 level;
+	IMSG_IFINFO
 };
 
 enum ctl_results {
