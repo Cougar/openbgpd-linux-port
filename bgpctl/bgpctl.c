@@ -1,4 +1,4 @@
-/*	$OpenBSD: bgpctl.c,v 1.88 2005/07/01 18:59:14 fgsch Exp $ */
+/*	$OpenBSD: bgpctl.c,v 1.100 2006/01/24 15:28:03 henning Exp $ */
 
 /*
  * Copyright (c) 2003 Henning Brauer <henning@openbsd.org>
@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <util.h>
 
 #include "bgpd.h"
 #include "session.h"
@@ -46,6 +47,7 @@ int		 main(int, char *[]);
 char		*fmt_peer(const struct peer_config *, int);
 void		 show_summary_head(void);
 int		 show_summary_msg(struct imsg *, int);
+int		 show_summary_terse_msg(struct imsg *, int);
 int		 show_neighbor_msg(struct imsg *, enum neighbor_views);
 void		 print_neighbor_capa_mp_safi(u_int8_t);
 void		 print_neighbor_msgstats(struct peer *);
@@ -71,8 +73,14 @@ void		 show_rib_summary_head(void);
 void		 print_prefix(struct bgpd_addr *, u_int8_t, u_int8_t);
 const char *	 print_origin(u_int8_t, int);
 int		 show_rib_summary_msg(struct imsg *);
+char		*fmt_mem(int64_t);
+int		 show_rib_memory_msg(struct imsg *);
 void		 send_filterset(struct imsgbuf *, struct filter_set_head *);
 static const char	*get_errstr(u_int8_t, u_int8_t);
+int		 show_result(struct imsg *);
+void		 log_warnx(const char *, ...);
+void		 log_warn(const char *, ...);
+void		 fatal(const char *);
 
 struct rde_memstats	rdemem;
 
@@ -135,7 +143,7 @@ main(int argc, char *argv[])
 		err(1, "connect: %s", sockname);
 
 	if ((ibuf = malloc(sizeof(struct imsgbuf))) == NULL)
-		fatal(NULL);
+		err(1, NULL);
 	imsg_init(ibuf, fd);
 	done = 0;
 
@@ -147,6 +155,9 @@ main(int argc, char *argv[])
 	case SHOW_SUMMARY:
 		imsg_compose(ibuf, IMSG_CTL_SHOW_NEIGHBOR, 0, 0, -1, NULL, 0);
 		show_summary_head();
+		break;
+	case SHOW_SUMMARY_TERSE:
+		imsg_compose(ibuf, IMSG_CTL_SHOW_TERSE, 0, 0, -1, NULL, 0);
 		break;
 	case SHOW_FIB:
 		if (!res->addr.af) {
@@ -198,8 +209,11 @@ main(int argc, char *argv[])
 			    &msg, sizeof(msg));
 		} else
 			imsg_compose(ibuf, IMSG_CTL_SHOW_RIB, 0, 0, -1,
-			    NULL, 0);
+			    &res->af, sizeof(res->af));
 		show_rib_summary_head();
+		break;
+	case SHOW_RIB_MEM:
+		imsg_compose(ibuf, IMSG_CTL_SHOW_RIB_MEM, 0, 0, -1, NULL, 0);
 		break;
 	case RELOAD:
 		imsg_compose(ibuf, IMSG_CTL_RELOAD, 0, 0, -1, NULL, 0);
@@ -225,20 +239,14 @@ main(int argc, char *argv[])
 	case NEIGHBOR_UP:
 		imsg_compose(ibuf, IMSG_CTL_NEIGHBOR_UP, 0, 0, -1,
 		    &neighbor, sizeof(neighbor));
-		printf("request sent.\n");
-		done = 1;
 		break;
 	case NEIGHBOR_DOWN:
 		imsg_compose(ibuf, IMSG_CTL_NEIGHBOR_DOWN, 0, 0, -1,
 		    &neighbor, sizeof(neighbor));
-		printf("request sent.\n");
-		done = 1;
 		break;
 	case NEIGHBOR_CLEAR:
 		imsg_compose(ibuf, IMSG_CTL_NEIGHBOR_CLEAR, 0, 0, -1,
 		    &neighbor, sizeof(neighbor));
-		printf("request sent.\n");
-		done = 1;
 		break;
 	case NETWORK_ADD:
 	case NETWORK_REMOVE:
@@ -264,7 +272,8 @@ main(int argc, char *argv[])
 		done = 1;
 		break;
 	case NETWORK_SHOW:
-		imsg_compose(ibuf, IMSG_CTL_SHOW_NETWORK, 0, 0, -1, NULL, 0);
+		imsg_compose(ibuf, IMSG_CTL_SHOW_NETWORK, 0, 0, -1,
+		    &res->af, sizeof(res->af));
 		show_network_head();
 		break;
 	}
@@ -284,10 +293,20 @@ main(int argc, char *argv[])
 				errx(1, "imsg_get error");
 			if (n == 0)
 				break;
+
+			if (imsg.hdr.type == IMSG_CTL_RESULT) {
+				done = show_result(&imsg);
+				imsg_free(&imsg);
+				continue;
+			}
+
 			switch (res->action) {
 			case SHOW:
 			case SHOW_SUMMARY:
 				done = show_summary_msg(&imsg, nodescr);
+				break;
+			case SHOW_SUMMARY_TERSE:
+				done = show_summary_terse_msg(&imsg, nodescr);
 				break;
 			case SHOW_FIB:
 				done = show_fib_msg(&imsg);
@@ -309,18 +328,21 @@ main(int argc, char *argv[])
 			case SHOW_RIB:
 				done = show_rib_summary_msg(&imsg);
 				break;
+			case SHOW_RIB_MEM:
+				done = show_rib_memory_msg(&imsg);
+				break;
 			case NETWORK_SHOW:
 				done = show_fib_msg(&imsg);
 				break;
+			case NEIGHBOR:
+			case NEIGHBOR_UP:
+			case NEIGHBOR_DOWN:
+			case NEIGHBOR_CLEAR:
 			case NONE:
 			case RELOAD:
 			case FIB:
 			case FIB_COUPLE:
 			case FIB_DECOUPLE:
-			case NEIGHBOR:
-			case NEIGHBOR_UP:
-			case NEIGHBOR_DOWN:
-			case NEIGHBOR_CLEAR:
 			case NETWORK_ADD:
 			case NETWORK_REMOVE:
 			case NETWORK_FLUSH:
@@ -343,7 +365,7 @@ fmt_peer(const struct peer_config *peer, int nodescr)
 
 	if (peer->descr[0] && !nodescr) {
 		if ((p = strdup(peer->descr)) == NULL)
-			fatal(NULL);
+			err(1, NULL);
 		return (p);
 	}
 
@@ -351,10 +373,10 @@ fmt_peer(const struct peer_config *peer, int nodescr)
 	if ((peer->remote_addr.af == AF_INET && peer->remote_masklen != 32) ||
 	    (peer->remote_addr.af == AF_INET6 && peer->remote_masklen != 128)) {
 		if (asprintf(&p, "%s/%u", ip, peer->remote_masklen) == -1)
-			fatal(NULL);
+			err(1, NULL);
 	} else {
 		if ((p = strdup(ip)) == NULL)
-			fatal(NULL);
+			err(1, NULL);
 	}
 
 	return (p);
@@ -408,6 +430,29 @@ show_summary_msg(struct imsg *imsg, int nodescr)
 }
 
 int
+show_summary_terse_msg(struct imsg *imsg, int nodescr)
+{
+	struct peer		*p;
+	char			*s;
+
+	switch (imsg->hdr.type) {
+	case IMSG_CTL_SHOW_NEIGHBOR:
+		p = imsg->data;
+		s = fmt_peer(&p->conf, nodescr);
+		printf("%s %u %s\n", s, p->conf.remote_as,
+		    statenames[p->state]);
+		free(s);
+		break;
+	case IMSG_CTL_END:
+		return (1);
+	default:
+		break;
+	}
+
+	return (0);
+}
+
+int
 show_neighbor_msg(struct imsg *imsg, enum neighbor_views nv)
 {
 	struct peer		*p;
@@ -426,7 +471,8 @@ show_neighbor_msg(struct imsg *imsg, enum neighbor_views nv)
 			    p->conf.remote_masklen) == -1)
 				err(1, NULL);
 		} else
-			s = strdup(log_addr(&p->conf.remote_addr));
+			if ((s = strdup(log_addr(&p->conf.remote_addr))) == NULL)
+				err(1, "strdup");
 
 		ina.s_addr = p->remote_bgpid;
 		printf("BGP neighbor is %s, ", s);
@@ -714,6 +760,7 @@ show_fib_msg(struct imsg *imsg)
 
 		break;
 	case IMSG_CTL_KROUTE6:
+	case IMSG_CTL_SHOW_NETWORK6:
 		if (imsg->hdr.len < IMSG_HEADER_SIZE + sizeof(struct kroute6))
 			errx(1, "wrong imsg len");
 		k6 = imsg->data;
@@ -758,7 +805,7 @@ show_nexthop_msg(struct imsg *imsg)
 	switch (imsg->hdr.type) {
 	case IMSG_CTL_SHOW_NEXTHOP:
 		p = imsg->data;
-		printf("%-20s %-10s", inet_ntoa(p->addr.v4),
+		printf("%-20s %-10s", log_addr(&p->addr),
 		    p->valid ? "valid" : "invalid");
 		if (p->kif.ifname[0]) {
 			printf("%-8s", p->kif.ifname);
@@ -954,7 +1001,6 @@ print_origin(u_int8_t origin, int sum)
 	}
 }
 
-
 int
 show_rib_summary_msg(struct imsg *imsg)
 {
@@ -988,6 +1034,64 @@ show_rib_summary_msg(struct imsg *imsg)
 	}
 
 	return (0);
+}
+
+char *
+fmt_mem(int64_t num)
+{
+	static char	buf[16];
+
+	if (fmt_scaled(num, buf) == -1)
+		snprintf(buf, sizeof(buf), "%lldB", num);
+
+	return (buf);
+}
+
+int
+show_rib_memory_msg(struct imsg *imsg)
+{
+	struct rde_memstats	stats;
+
+	switch (imsg->hdr.type) {
+	case IMSG_CTL_SHOW_RIB_MEM:
+		memcpy(&stats, imsg->data, sizeof(stats));
+		printf("RDE memory statistics\n");
+		printf("%10lld IPv4 network entries using %s of memory\n",
+		    stats.pt4_cnt, fmt_mem(stats.pt4_cnt *
+		    sizeof(struct pt_entry4)));
+		if (stats.pt6_cnt != 0)
+			printf("%10lld IPv6 network entries using "
+			    "%s of memory\n", stats.pt6_cnt,
+			    fmt_mem(stats.pt6_cnt * sizeof(struct pt_entry6)));
+		printf("%10lld prefix entries using %s of memory\n",
+		    stats.prefix_cnt, fmt_mem(stats.prefix_cnt *
+		    sizeof(struct prefix)));
+		printf("%10lld BGP path attribute entries using %s of memory\n",
+		    stats.path_cnt, fmt_mem(stats.path_cnt *
+		    sizeof(struct rde_aspath)));
+		printf("%10lld BGP AS-PATH attribute entries using "
+		    "%s of memory,\n\t   and holding %lld references\n",
+		    stats.aspath_cnt, fmt_mem(stats.aspath_size),
+		    stats.aspath_refs);
+		printf("%10lld BGP attributes entries using %s of memory\n",
+		    stats.attr_cnt, fmt_mem(stats.attr_cnt *
+		    sizeof(struct attr)));
+		printf("\t   and holding %lld references\n", stats.attr_refs);
+		printf("%10lld BGP attributes using %s of memory\n",
+		    stats.attr_dcnt, fmt_mem(stats.attr_data));
+		printf("RIB using %s of memory\n", fmt_mem(
+		    stats.pt4_cnt * sizeof(struct pt_entry4) +
+		    stats.pt6_cnt * sizeof(struct pt_entry6) +
+		    stats.prefix_cnt * sizeof(struct prefix) +
+		    stats.path_cnt * sizeof(struct rde_aspath) +
+		    stats.aspath_size + stats.attr_cnt * sizeof(struct attr) +
+		    stats.attr_data));
+		break;
+	default:
+		break;
+	}
+
+	return (1);
 }
 
 void
@@ -1037,3 +1141,53 @@ get_errstr(u_int8_t errcode, u_int8_t subcode)
 
 	return (errstr);
 }
+
+int
+show_result(struct imsg *imsg)
+{
+	u_int	rescode;
+
+	if (imsg->hdr.len != IMSG_HEADER_SIZE + sizeof(rescode))
+		errx(1, "got IMSG_CTL_RESULT with wrong len");
+	memcpy(&rescode, imsg->data, sizeof(rescode));
+
+	if (rescode == 0)
+		printf("request processed\n");
+	else {
+		if (rescode >
+		    sizeof(ctl_res_strerror)/sizeof(ctl_res_strerror[0]))
+			errx(1, "illegal error code %u", rescode);
+		printf("%s\n", ctl_res_strerror[rescode]);
+	}
+
+	return (1);
+}
+
+#if 0
+/* following functions are necessary for imsg framework */
+void
+log_warnx(const char *emsg, ...)
+{
+	va_list	 ap;
+
+	va_start(ap, emsg);
+	vwarnx(emsg, ap);
+	va_end(ap);
+}
+
+void
+log_warn(const char *emsg, ...)
+{
+	va_list	 ap;
+
+	va_start(ap, emsg);
+	vwarn(emsg, ap);
+	va_end(ap);
+}
+
+void
+fatal(const char *emsg)
+{
+	err(1, emsg);
+}
+#endif
