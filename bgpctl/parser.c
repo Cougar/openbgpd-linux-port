@@ -1,4 +1,4 @@
-/*	$OpenBSD: parser.c,v 1.28 2006/02/09 16:08:28 claudio Exp $ */
+/*	$OpenBSD: parser.c,v 1.32 2006/06/14 17:06:44 claudio Exp $ */
 
 /*
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
@@ -133,6 +133,7 @@ static const struct token t_show_rib[] = {
 	{ ASTYPE,	"transit-as",	AS_TRANSIT,	t_show_as},
 	{ ASTYPE,	"empty-as",	AS_EMPTY,	NULL},
 	{ KEYWORD,	"summary",	SHOW_SUMMARY,	NULL},
+	{ FLAG,		"detail",	F_CTL_DETAIL,	t_show_rib},
 	{ KEYWORD,	"memory",	SHOW_RIB_MEM,	NULL},
 	{ FAMILY,	"",		NONE,		NULL},
 	{ ENDTOKEN,	"",		NONE,		NULL}
@@ -165,10 +166,11 @@ static const struct token t_neighbor[] = {
 };
 
 static const struct token t_neighbor_modifiers[] = {
-	{ KEYWORD,	"up",		NEIGHBOR_UP,	NULL},
-	{ KEYWORD,	"down",		NEIGHBOR_DOWN,	NULL},
-	{ KEYWORD,	"clear",	NEIGHBOR_CLEAR,	NULL},
-	{ ENDTOKEN,	"",		NONE,		NULL}
+	{ KEYWORD,	"up",		NEIGHBOR_UP,		NULL},
+	{ KEYWORD,	"down",		NEIGHBOR_DOWN,		NULL},
+	{ KEYWORD,	"clear",	NEIGHBOR_CLEAR,		NULL},
+	{ KEYWORD,	"refresh",	NEIGHBOR_RREFRESH,	NULL},
+	{ ENDTOKEN,	"",		NONE,			NULL}
 };
 
 static const struct token t_show_as[] = {
@@ -516,7 +518,7 @@ parse_addr(const char *word, struct bgpd_addr *addr)
 	bzero(addr, sizeof(struct bgpd_addr));
 	bzero(&ina, sizeof(ina));
 
-	if (inet_pton(AF_INET, word, &ina) == 1) {
+	if (inet_net_pton(AF_INET, word, &ina, sizeof(ina)) != -1) {
 		addr->af = AF_INET;
 		addr->v4 = ina;
 		return (1);
