@@ -891,7 +891,7 @@ bgpctl_getopt(int *argc, char **argv[], int type)
 {
 	int	  ch;
 
-	optind = optreset = 1;
+	optind = 1;
 	while ((ch = getopt((*argc) + 1, (*argv) - 1, "o:")) != -1) {
 		switch (ch) {
 		case 'o':
