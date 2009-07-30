@@ -22,7 +22,9 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#if 0
 #include <net/if_types.h>
+#endif
 #include <netinet/in.h>
 #include <netinet/in_systm.h>
 #include <netinet/ip.h>
