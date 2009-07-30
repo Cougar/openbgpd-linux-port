@@ -1,4 +1,4 @@
-/*	$OpenBSD: parser.c,v 1.47 2007/10/14 22:12:31 deraadt Exp $ */
+/*	$OpenBSD: parser.c,v 1.50 2008/06/15 09:58:43 claudio Exp $ */
 
 /*
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "parser.h"
 #include "irrfilter.h"
@@ -52,7 +53,13 @@ enum token_type {
 	PREPNBR,
 	PREPSELF,
 	WEIGHT,
-	FAMILY
+	FAMILY,
+	GETOPT
+};
+
+enum getopts {
+	GETOPT_NONE,
+	GETOPT_IRRFILTER
 };
 
 struct token {
@@ -288,8 +295,9 @@ static const struct token t_weight[] = {
 };
 
 static const struct token t_irrfilter[] = {
-	{ ASNUM,	"",		NONE,		t_irrfilter_opts},
-	{ ENDTOKEN,	"",		NONE,		NULL}
+	{ GETOPT,	"",	GETOPT_IRRFILTER,	t_irrfilter},
+	{ ASNUM,	"",	NONE,			t_irrfilter_opts},
+	{ ENDTOKEN,	"",	NONE,			NULL}
 };
 
 static const struct token t_irrfilter_opts[] = {
@@ -300,7 +308,8 @@ static const struct token t_irrfilter_opts[] = {
 
 static struct parse_result	res;
 
-const struct token	*match_token(const char *, const struct token []);
+const struct token	*match_token(int *argc, char **argv[],
+			    const struct token []);
 void			 show_valid_args(const struct token []);
 int			 parse_addr(const char *, struct bgpd_addr *);
 int			 parse_prefix(const char *, struct bgpd_addr *,
@@ -311,6 +320,7 @@ int			 parse_number(const char *, struct parse_result *,
 int			 getcommunity(const char *);
 int			 parse_community(const char *, struct parse_result *);
 int			 parse_nexthop(const char *, struct parse_result *);
+int			 bgpctl_getopt(int *, char **[], int);
 
 struct parse_result *
 parse(int argc, char *argv[])
@@ -322,9 +332,13 @@ parse(int argc, char *argv[])
 	res.community.as = COMMUNITY_UNSET;
 	res.community.type = COMMUNITY_UNSET;
 	TAILQ_INIT(&res.set);
+	if ((res.irr_outdir = getcwd(NULL, 0)) == NULL) {
+		fprintf(stderr, "getcwd failed: %s", strerror(errno));
+		return (NULL);
+	}
 
 	while (argc >= 0) {
-		if ((match = match_token(argv[0], table)) == NULL) {
+		if ((match = match_token(&argc, &argv, table)) == NULL) {
 			fprintf(stderr, "valid commands/args:\n");
 			show_valid_args(table);
 			return (NULL);
@@ -348,11 +362,12 @@ parse(int argc, char *argv[])
 }
 
 const struct token *
-match_token(const char *word, const struct token table[])
+match_token(int *argc, char **argv[], const struct token table[])
 {
 	u_int			 i, match;
 	const struct token	*t = NULL;
 	struct filter_set	*fs;
+	const char		*word = *argv[0];
 
 	match = 0;
 
@@ -483,6 +498,12 @@ match_token(const char *word, const struct token table[])
 				t = &table[i];
 			}
 			break;
+		case GETOPT:
+			if (bgpctl_getopt(argc, argv, table[i].value)) {
+				match++;
+				t = &table[i];
+			}
+			break;
 		case ENDTOKEN:
 			break;
 		}
@@ -548,6 +569,9 @@ show_valid_args(const struct token table[])
 		case FAMILY:
 			fprintf(stderr, "  [ inet | inet6 | IPv4 | IPv6 ]\n");
 			break;
+		case GETOPT:
+			fprintf(stderr, "  <options>\n");
+			break;
 		case ENDTOKEN:
 			break;
 		}
@@ -612,8 +636,10 @@ parse_prefix(const char *word, struct bgpd_addr *addr, u_int8_t *prefixlen)
 			err(1, "parse_prefix: malloc");
 		strlcpy(ps, word, strlen(word) - strlen(p) + 1);
 
-		if (parse_addr(ps, addr) == 0)
+		if (parse_addr(ps, addr) == 0) {
+			free(ps);
 			return (0);
+		}
 
 		free(ps);
 	} else
@@ -858,4 +884,33 @@ inet6applymask(struct in6_addr *dest, const struct in6_addr *src, int prefixlen)
 
 	for (i = 0; i < 16; i++)
 		dest->s6_addr[i] = src->s6_addr[i] & mask.s6_addr[i];
+}
+
+int
+bgpctl_getopt(int *argc, char **argv[], int type)
+{
+	int	  ch;
+
+	optind = optreset = 1;
+	while ((ch = getopt((*argc) + 1, (*argv) - 1, "o:")) != -1) {
+		switch (ch) {
+		case 'o':
+			res.irr_outdir = optarg;
+			break;
+		default:
+			usage();
+			/* NOTREACHED */
+		}
+	}
+
+	if (optind > 1) {
+		(*argc) -= (optind - 1);
+		(*argv) += (optind - 1);
+
+		/* need to move one backwards as calling code moves forward */
+		(*argc)++;
+		(*argv)--;
+		return (1);
+	} else
+		return (0);
 }
