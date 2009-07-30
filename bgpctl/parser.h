@@ -1,4 +1,4 @@
-/*	$OpenBSD: parser.h,v 1.9 2005/06/06 17:13:56 henning Exp $ */
+/*	$OpenBSD: parser.h,v 1.11 2006/01/24 15:28:03 henning Exp $ */
 
 /*
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
@@ -24,10 +24,12 @@ enum actions {
 	NONE,
 	SHOW,
 	SHOW_SUMMARY,
+	SHOW_SUMMARY_TERSE,
 	SHOW_NEIGHBOR,
 	SHOW_NEIGHBOR_TIMERS,
 	SHOW_FIB,
 	SHOW_RIB,
+	SHOW_RIB_MEM,
 	SHOW_NEXTHOP,
 	SHOW_INTERFACE,
 	RELOAD,
