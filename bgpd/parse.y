@@ -579,8 +579,8 @@ conf_main	: AS as4number		{
 			}
 			free($4);
 		}
-#if 0
 		| RTABLE NUMBER {
+#if 0
 			if ($2 > RT_TABLEID_MAX || $2 < 0) {
 				yyerror("invalid rtable id");
 				YYERROR;
