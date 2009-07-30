@@ -1,4 +1,4 @@
-/*	$OpenBSD: bgpctl.c,v 1.106 2006/06/14 17:10:42 claudio Exp $ */
+/*	$OpenBSD: bgpctl.c,v 1.110 2006/08/28 05:28:49 henning Exp $ */
 
 /*
  * Copyright (c) 2003 Henning Brauer <henning@openbsd.org>
@@ -81,9 +81,6 @@ int		 show_rib_memory_msg(struct imsg *);
 void		 send_filterset(struct imsgbuf *, struct filter_set_head *);
 static const char	*get_errstr(u_int8_t, u_int8_t);
 int		 show_result(struct imsg *);
-void		 log_warnx(const char *, ...);
-void		 log_warn(const char *, ...);
-void		 fatal(const char *);
 
 struct rde_memstats	rdemem;
 
@@ -108,7 +105,9 @@ main(int argc, char *argv[])
 	struct network_config	 net;
 	struct parse_result	*res;
 	struct ctl_neighbor	 neighbor;
+	struct ctl_show_rib_request	ribreq;
 	char			*sockname;
+	enum imsg_type		 type;
 
 	sockname = SOCKET_NAME;
 	while ((ch = getopt(argc, argv, "ns:")) != -1) {
@@ -131,7 +130,7 @@ main(int argc, char *argv[])
 	if ((res = parse(argc, argv)) == NULL)
 		exit(1);
 
-	memcpy(&neighbor.addr, &res->addr, sizeof(neighbor.addr));
+	memcpy(&neighbor.addr, &res->peeraddr, sizeof(neighbor.addr));
 	strlcpy(neighbor.descr, res->peerdesc, sizeof(neighbor.descr));
 
 	if ((fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
@@ -190,7 +189,7 @@ main(int argc, char *argv[])
 		break;
 	case SHOW_NEIGHBOR:
 	case SHOW_NEIGHBOR_TIMERS:
-		if (res->addr.af || res->peerdesc[0])
+		if (res->peeraddr.af || res->peerdesc[0])
 			imsg_compose(ibuf, IMSG_CTL_SHOW_NEIGHBOR, 0, 0, -1,
 			    &neighbor, sizeof(neighbor));
 		else
@@ -198,21 +197,22 @@ main(int argc, char *argv[])
 			    NULL, 0);
 		break;
 	case SHOW_RIB:
-		if (res->as.type != AS_NONE)
-			imsg_compose(ibuf, IMSG_CTL_SHOW_RIB_AS, 0, 0, -1,
-			    &res->as, sizeof(res->as));
-		else if (res->addr.af) {
-			struct ctl_show_rib_prefix	msg;
-
-			bzero(&msg, sizeof(msg));
-			memcpy(&msg.prefix, &res->addr, sizeof(res->addr));
-			msg.prefixlen = res->prefixlen;
-			msg.flags = res->flags;
-			imsg_compose(ibuf, IMSG_CTL_SHOW_RIB_PREFIX, 0, 0, -1,
-			    &msg, sizeof(msg));
-		} else
-			imsg_compose(ibuf, IMSG_CTL_SHOW_RIB, 0, 0, -1,
-			    &res->af, sizeof(res->af));
+		bzero(&ribreq, sizeof(ribreq));
+		type = IMSG_CTL_SHOW_RIB;
+		if (res->as.type != AS_NONE) {
+			memcpy(&ribreq.as, &res->as, sizeof(res->as));
+			type = IMSG_CTL_SHOW_RIB_AS;
+		}
+		if (res->addr.af) {
+			memcpy(&ribreq.prefix, &res->addr, sizeof(res->addr));
+			ribreq.prefixlen = res->prefixlen;
+			type = IMSG_CTL_SHOW_RIB_PREFIX;
+		}
+		memcpy(&ribreq.neighbor, &neighbor,
+		    sizeof(ribreq.neighbor));
+		ribreq.af = res->af;
+		ribreq.flags = res->flags;
+		imsg_compose(ibuf, type, 0, 0, -1, &ribreq, sizeof(ribreq));
 		if (!(res->flags & F_CTL_DETAIL))
 			show_rib_summary_head();
 		break;
@@ -527,6 +527,8 @@ show_neighbor_msg(struct imsg *imsg, enum neighbor_views nv)
 			}
 			if (p->capa.peer.refresh)
 				printf("    Route Refresh\n");
+			if (p->capa.peer.restart)
+				printf("    Graceful Restart\n");
 		}
 		printf("\n");
 		switch (nv) {
