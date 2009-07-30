@@ -256,6 +256,7 @@ pt_dump_r(void (*upcall)(struct pt_entry *, void *), void *arg,
 	} else
 		p = pt_restart(ctx);
 
+#if 0
 	for (i = 0; p != NULL; p = RB_NEXT(pt_tree, unused, p)) {
 		if (ctx && i++ >= ctx->count) {
 			/* store next start point */
@@ -273,6 +274,7 @@ pt_dump_r(void (*upcall)(struct pt_entry *, void *), void *arg,
 		}
 		upcall(p, arg);
 	}
+#endif
 
 	if (ctx)
 		ctx->done = 1;
