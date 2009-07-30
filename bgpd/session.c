@@ -89,7 +89,6 @@ int	parse_capabilities(struct peer *, u_char *, u_int16_t);
 void	session_dispatch_imsg(struct imsgbuf *, int, u_int *);
 void	session_up(struct peer *);
 void	session_down(struct peer *);
-void	session_demote(struct peer *, int);
 
 int			 la_cmp(struct listen_addr *, struct listen_addr *);
 struct peer		*getpeerbyip(struct sockaddr *);
@@ -301,9 +300,6 @@ session_main(struct bgpd_config *config, struct peer *cpeers,
 
 				/* deletion due? */
 				if (p->conf.reconf_action == RECONF_DELETE) {
-					if (p->demoted)
-						session_demote(p, -1);
-					p->conf.demote_group[0] = 0;
 					bgp_fsm(p, EVNT_STOP);
 					log_peer_warnx(&p->conf, "removed");
 					if (last != NULL)
@@ -423,17 +419,6 @@ session_main(struct bgpd_config *config, struct peer *cpeers,
 			if (p->IdleHoldResetTimer &&
 			    p->IdleHoldResetTimer < nextaction)
 				nextaction = p->IdleHoldResetTimer;
-
-			/* carp demotion */
-			if (p->demoted && p->state == STATE_ESTABLISHED) {
-				if (time(NULL) - p->stats.last_updown >=
-				    INTERVAL_HOLD_DEMOTED)
-					session_demote(p, -1);
-				if (p->stats.last_updown +
-				    INTERVAL_HOLD_DEMOTED < nextaction)
-					nextaction = p->stats.last_updown +
-					    INTERVAL_HOLD_DEMOTED;
-			}
 
 			/* are we waiting for a write? */
 			events = POLLIN;
@@ -589,14 +574,6 @@ init_peer(struct peer *p)
 		p->IdleHoldTimer = 0;		/* no autostart */
 	else
 		p->IdleHoldTimer = time(NULL);	/* start ASAP */
-
-	/*
-	 * on startup, demote if requested.
-	 * do not handle new peers. they must reach ESTABLISHED beforehands.
-	 * peers added at runtime have reconf_action set to RECONF_REINIT.
-	 */
-	if (p->conf.reconf_action != RECONF_REINIT && p->conf.demote_group[0])
-		session_demote(p, +1);
 }
 
 void
@@ -879,11 +856,6 @@ change_state(struct peer *peer, enum session_state state,
 
 	switch (state) {
 	case STATE_IDLE:
-		/* carp demotion first. new peers handled in init_peer */
-		if (peer->state == STATE_ESTABLISHED &&
-		    peer->conf.demote_group[0] && !peer->demoted)
-			session_demote(peer, +1);
-
 		/*
 		 * try to write out what's buffered (maybe a notification),
 		 * don't bother if it fails
@@ -2314,16 +2286,11 @@ session_dispatch_imsg(struct imsgbuf *ibuf, int idx, u_int *listener_cnt)
 				p->next = peers;
 				peers = p;
 			}
-			/* find ones that need attention */
-			for (p = peers; p != NULL; p = p->next) {
-				/* needs to be deleted? */
+			/* find ones to be deleted */
+			for (p = peers; p != NULL; p = p->next)
 				if (p->conf.reconf_action == RECONF_NONE &&
 				    !p->conf.cloned)
 					p->conf.reconf_action = RECONF_DELETE;
-				/* had demotion, is demoted, demote removed? */
-				if (p->demoted && !p->conf.demote_group[0])
-						session_demote(p, -1);
-			}
 
 			/* delete old listeners */
 			for (la = TAILQ_FIRST(conf->listen_addrs); la != NULL;
@@ -2793,19 +2760,4 @@ addr2sa(struct bgpd_addr *addr, u_int16_t port)
 	}
 
 	return ((struct sockaddr *)&ss);
-}
-
-void
-session_demote(struct peer *p, int level)
-{
-	struct demote_msg	msg;
-
-	strlcpy(msg.demote_group, p->conf.demote_group,
-	    sizeof(msg.demote_group));
-	msg.level = level;
-	if (imsg_compose(ibuf_main, IMSG_DEMOTE, p->conf.id, 0, -1,
-	    &msg, sizeof(msg)) == -1)
-		fatalx("imsg_compose error");
-
-	p->demoted += level;
 }
