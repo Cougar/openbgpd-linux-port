@@ -4,4 +4,4 @@ bgpd_SOURCES = bgpd.c buffer.c session.c log.c parse.y config.c imsg.c \
 	       rde.c rde_rib.c rde_decide.c rde_prefix.c mrt.c \
 	       control.c rde_update.c rde_attr.c printconf.c \
 	       rde_filter.c kroute.c name2id.c util.c timer.c
-bgpd_LDADD = ../openbsd-compat/libopenbsdcompat.a -lresolv
+bgpd_LDADD = ../openbsd-compat/libopenbsdcompat.a -lresolv -lrt
