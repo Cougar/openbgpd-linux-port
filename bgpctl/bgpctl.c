@@ -1,4 +1,4 @@
-/*	$OpenBSD: bgpctl.c,v 1.132 2008/02/24 21:02:11 claudio Exp $ */
+/*	$OpenBSD: bgpctl.c,v 1.134 2008/06/07 20:23:15 henning Exp $ */
 
 /*
  * Copyright (c) 2003 Henning Brauer <henning@openbsd.org>
@@ -94,7 +94,7 @@ usage(void)
 {
 	extern char	*__progname;
 
-	fprintf(stderr, "usage: %s [-n] [-o directory] [-s socket] "
+	fprintf(stderr, "usage: %s [-n] [-s socket] "
 	    "command [arguments ...]\n", __progname);
 	exit(1);
 }
@@ -109,19 +109,15 @@ main(int argc, char *argv[])
 	struct parse_result	*res;
 	struct ctl_neighbor	 neighbor;
 	struct ctl_show_rib_request	ribreq;
-	char			*sockname, *outdir;
+	char			*sockname;
 	enum imsg_type		 type;
 
 	sockname = SOCKET_NAME;
-	outdir = getcwd(NULL, 0);
-	while ((ch = getopt(argc, argv, "no:s:")) != -1) {
+	while ((ch = getopt(argc, argv, "ns:")) != -1) {
 		switch (ch) {
 		case 'n':
 			if (++nodescr > 1)
 				usage();
-			break;
-		case 'o':
-			outdir = optarg;
 			break;
 		case 's':
 			sockname = optarg;
@@ -138,7 +134,7 @@ main(int argc, char *argv[])
 		exit(1);
 
 	if (res->action == IRRFILTER)
-		irr_main(res->as.as, res->flags, outdir);
+		irr_main(res->as.as, res->flags, res->irr_outdir);
 
 	memcpy(&neighbor.addr, &res->peeraddr, sizeof(neighbor.addr));
 	strlcpy(neighbor.descr, res->peerdesc, sizeof(neighbor.descr));
