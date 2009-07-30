@@ -147,7 +147,6 @@ int		fetchifs(int);
 int		dispatch_rtmsg_addr(struct rt_msghdr *,
 		    struct sockaddr *[RTAX_MAX], int);
 		    struct sockaddr *[RTAX_MAX]);
-#endif
 
 RB_HEAD(kroute_tree, kroute_node)	krt;
 RB_PROTOTYPE(kroute_tree, kroute_node, entry, kroute_compare)
@@ -164,6 +163,7 @@ RB_GENERATE(knexthop_tree, knexthop_node, entry, knexthop_compare)
 RB_HEAD(kif_tree, kif_node)		kit;
 RB_PROTOTYPE(kif_tree, kif_node, entry, kif_compare)
 RB_GENERATE(kif_tree, kif_node, entry, kif_compare)
+#endif
 
 /*
  * exported functions
@@ -206,10 +206,12 @@ kr_init(int fs, u_int rtableid)
 	kr_state.pid = getpid();
 	kr_state.rtseq = 1;
 
+#if 0
 	RB_INIT(&krt);
 	RB_INIT(&krt6);
 	RB_INIT(&knt);
 	RB_INIT(&kit);
+#endif
 
 	if (fetchifs(0) == -1)
 		return (-1);
@@ -220,8 +222,10 @@ kr_init(int fs, u_int rtableid)
 		if (fetchtable(0, 1) == -1)
 			return (-1);
 
+#if 0
 	if (protect_lo() == -1)
 		return (-1);
+#endif
 
 	return (kr_state.fd);
 }
@@ -405,11 +409,13 @@ kr6_delete(struct kroute6_label *kl)
 void
 kr_shutdown(void)
 {
+#if 0
 	kr_fib_decouple();
 	knexthop_clear();
 	kroute_clear();
 	kroute6_clear();
 	kif_clear();
+#endif
 }
 
 void
@@ -465,6 +471,7 @@ kr_dispatch_msg(void)
 int
 kr_nexthop_add(struct bgpd_addr *addr)
 {
+#if 0
 	struct knexthop_node	*h;
 
 	if ((h = knexthop_find(addr)) != NULL) {
@@ -509,23 +516,27 @@ kr_nexthop_add(struct bgpd_addr *addr)
 			return (-1);
 	}
 
+#endif
 	return (0);
 }
 
 void
 kr_nexthop_delete(struct bgpd_addr *addr)
 {
+#if 0
 	struct knexthop_node	*kn;
 
 	if ((kn = knexthop_find(addr)) == NULL)
 		return;
 
 	knexthop_remove(kn);
+#endif
 }
 
 void
 kr_show_route(struct imsg *imsg)
 {
+#if 0
 	struct kroute_node	*kr, *kn;
 	struct kroute6_node	*kr6, *kn6;
 	struct bgpd_addr	*addr;
@@ -626,11 +637,13 @@ kr_show_route(struct imsg *imsg)
 	}
 
 	send_imsg_session(IMSG_CTL_END, imsg->hdr.pid, NULL, 0);
+#endif
 }
 
 void
 kr_ifinfo(char *ifname)
 {
+#if 0
 	struct kif_node	*kif;
 
 	RB_FOREACH(kif, kif_tree, &kit)
@@ -639,6 +652,7 @@ kr_ifinfo(char *ifname)
 			    &kif->k, sizeof(kif->k));
 			return;
 		}
+#endif
 }
 
 struct redist_node {
@@ -790,6 +804,7 @@ kr_redistribute6(int type, struct kroute6 *kr6)
 int
 kr_reload(void)
 {
+#if 0
 	struct redist_node	*rn;
 	struct knexthop_node	*nh;
 
@@ -800,6 +815,7 @@ kr_reload(void)
 	RB_FOREACH(nh, knexthop_tree, &knt)
 		knexthop_validate(nh);
 
+#endif
 	return (0);
 }
 
@@ -807,6 +823,7 @@ kr_reload(void)
  * RB-tree compare functions
  */
 
+#if 0
 int
 kroute_compare(struct kroute_node *a, struct kroute_node *b)
 {
@@ -1422,6 +1439,7 @@ kif_kr6_remove(struct kroute6_node *kr)
 
 	return (0);
 }
+#endif
 
 /*
  * nexthop validation
@@ -1471,6 +1489,7 @@ kroute_validate(struct kroute *kr)
 #endif
 }
 
+#if 0
 int
 kroute6_validate(struct kroute6 *kr)
 {
@@ -1715,6 +1734,7 @@ protect_lo(void)
 
 	return (0);
 }
+#endif
 
 u_int8_t
 prefixlen_classful(in_addr_t ina)
