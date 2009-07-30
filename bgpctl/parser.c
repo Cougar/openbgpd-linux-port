@@ -1,4 +1,4 @@
-/*	$OpenBSD: parser.c,v 1.18 2005/07/01 18:59:15 fgsch Exp $ */
+/*	$OpenBSD: parser.c,v 1.28 2006/02/09 16:08:28 claudio Exp $ */
 
 /*
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
@@ -16,14 +16,21 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <sys/types.h>
+#include <sys/socket.h>
+
 #include <err.h>
 #include <errno.h>
 #include <limits.h>
+#include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "parser.h"
+
+long long
+	strtonum(const char *, long long, long long, const char **);
 
 enum token_type {
 	NOTOKEN,
@@ -55,6 +62,7 @@ struct token {
 
 static const struct token t_main[];
 static const struct token t_show[];
+static const struct token t_show_summary[];
 static const struct token t_show_fib[];
 static const struct token t_show_rib[];
 static const struct token t_show_neighbor[];
@@ -66,6 +74,7 @@ static const struct token t_show_as[];
 static const struct token t_show_prefix[];
 static const struct token t_show_ip[];
 static const struct token t_network[];
+static const struct token t_network_show[];
 static const struct token t_prefix[];
 static const struct token t_set[];
 static const struct token t_community[];
@@ -91,11 +100,18 @@ static const struct token t_show[] = {
 	{ KEYWORD,	"fib",		SHOW_FIB,	t_show_fib},
 	{ KEYWORD,	"interfaces",	SHOW_INTERFACE,	NULL},
 	{ KEYWORD,	"neighbor",	SHOW_NEIGHBOR,	t_show_neighbor},
+	{ KEYWORD,	"network",	NETWORK_SHOW,	t_network_show},
 	{ KEYWORD,	"nexthop",	SHOW_NEXTHOP,	NULL},
 	{ KEYWORD,	"rib",		SHOW_RIB,	t_show_rib},
 	{ KEYWORD,	"ip",		NONE,		t_show_ip},
-	{ KEYWORD,	"summary",	SHOW_SUMMARY,	NULL},
+	{ KEYWORD,	"summary",	SHOW_SUMMARY,	t_show_summary},
 	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_show_summary[] = {
+	{ NOTOKEN,	"",		NONE,			NULL},
+	{ KEYWORD,	"terse",	SHOW_SUMMARY_TERSE,	NULL},
+	{ ENDTOKEN,	"",		NONE,			NULL}
 };
 
 static const struct token t_show_fib[] = {
@@ -117,6 +133,8 @@ static const struct token t_show_rib[] = {
 	{ ASTYPE,	"transit-as",	AS_TRANSIT,	t_show_as},
 	{ ASTYPE,	"empty-as",	AS_EMPTY,	NULL},
 	{ KEYWORD,	"summary",	SHOW_SUMMARY,	NULL},
+	{ KEYWORD,	"memory",	SHOW_RIB_MEM,	NULL},
+	{ FAMILY,	"",		NONE,		NULL},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -174,13 +192,19 @@ static const struct token t_network[] = {
 	{ KEYWORD,	"add",		NETWORK_ADD,	t_prefix},
 	{ KEYWORD,	"delete",	NETWORK_REMOVE,	t_prefix},
 	{ KEYWORD,	"flush",	NETWORK_FLUSH,	NULL},
-	{ KEYWORD,	"show",		NETWORK_SHOW,	NULL},
+	{ KEYWORD,	"show",		NETWORK_SHOW,	t_network_show},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
 static const struct token t_prefix[] = {
 	{ PREFIX,	"",		NONE,		t_set},
 	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_network_show[] = {
+	{ NOTOKEN,	"",		NONE,			NULL},
+	{ FAMILY,	"",		NONE,			NULL},
+	{ ENDTOKEN,	"",		NONE,			NULL}
 };
 
 static const struct token t_set[] = {
@@ -484,6 +508,7 @@ int
 parse_addr(const char *word, struct bgpd_addr *addr)
 {
 	struct in_addr	ina;
+	struct addrinfo	hints, *r;
 
 	if (word == NULL)
 		return (0);
@@ -491,9 +516,25 @@ parse_addr(const char *word, struct bgpd_addr *addr)
 	bzero(addr, sizeof(struct bgpd_addr));
 	bzero(&ina, sizeof(ina));
 
-	if (inet_pton(AF_INET, word, &ina)) {
+	if (inet_pton(AF_INET, word, &ina) == 1) {
 		addr->af = AF_INET;
 		addr->v4 = ina;
+		return (1);
+	}
+
+	bzero(&hints, sizeof(hints));
+	hints.ai_family = AF_INET6;
+	hints.ai_socktype = SOCK_DGRAM; /*dummy*/
+	hints.ai_flags = AI_NUMERICHOST;
+	if (getaddrinfo(word, "0", &hints, &r) == 0) {
+		addr->af = AF_INET6;
+		memcpy(&addr->v6,
+		    &((struct sockaddr_in6 *)r->ai_addr)->sin6_addr,
+		    sizeof(addr->v6));
+		addr->scope_id =
+		    ((struct sockaddr_in6 *)r->ai_addr)->sin6_scope_id;
+
+		freeaddrinfo(r);
 		return (1);
 	}
 
@@ -503,29 +544,51 @@ parse_addr(const char *word, struct bgpd_addr *addr)
 int
 parse_prefix(const char *word, struct bgpd_addr *addr, u_int8_t *prefixlen)
 {
-	struct in_addr	 ina;
-	int		 bits = 32;
+	char		*p, *ps;
+	const char	*errstr = NULL;
+	int		 mask = -1;
 
 	if (word == NULL)
 		return (0);
 
 	bzero(addr, sizeof(struct bgpd_addr));
-	bzero(&ina, sizeof(ina));
 
-	if (strrchr(word, '/') != NULL) {
-		if ((bits = inet_net_pton(AF_INET, word,
-		    &ina, sizeof(ina))) == -1)
+	if ((p = strrchr(word, '/')) != NULL) {
+		mask = strtonum(p + 1, 0, 128, &errstr);
+		if (errstr)
+			errx(1, "invalid netmask: %s", errstr);
+
+		if ((ps = malloc(strlen(word) - strlen(p) + 1)) == NULL)
+			err(1, "host: malloc");
+		strlcpy(ps, word, strlen(word) - strlen(p) + 1);
+
+		if (parse_addr(ps, addr) == 0)
 			return (0);
-		addr->af = AF_INET;
-		addr->v4.s_addr = ina.s_addr & htonl(prefixlen2mask(bits));
-		*prefixlen = bits;
-		return (1);
-	} else {
-		*prefixlen = 32;
-		return (parse_addr(word, addr));
+
+		free(ps);
+	} else
+		if (parse_addr(word, addr) == 0)
+			return (0);
+
+	switch (addr->af) {
+	case AF_INET:
+		if (mask == -1)
+			mask = 32;
+		if (mask > 32)
+			errx(1, "invalid netmask: too large");
+		addr->v4.s_addr = addr->v4.s_addr & htonl(prefixlen2mask(mask));
+		break;
+	case AF_INET6:
+		if (mask == -1)
+			mask = 128;
+		inet6applymask(&addr->v6, &addr->v6, mask);
+		break;
+	default:
+		return (0);
 	}
 
-	return (0);
+	*prefixlen = mask;
+	return (1);
 }
 
 int
@@ -727,7 +790,7 @@ parse_nexthop(const char *word, struct parse_result *r)
 	return (1);
 }
 
-/* XXX local copy from kroute.c, should go to a shared file */
+/* XXX local copies from kroute.c, should go to a shared file */
 in_addr_t
 prefixlen2mask(u_int8_t prefixlen)
 {
@@ -736,3 +799,21 @@ prefixlen2mask(u_int8_t prefixlen)
 
 	return (0xffffffff << (32 - prefixlen));
 }
+
+void
+inet6applymask(struct in6_addr *dest, const struct in6_addr *src, int prefixlen)
+{
+	struct in6_addr	mask;
+	int		i;
+
+	bzero(&mask, sizeof(mask));
+	for (i = 0; i < prefixlen / 8; i++)
+		mask.s6_addr[i] = 0xff;
+	i = prefixlen % 8;
+	if (i)
+		mask.s6_addr[prefixlen / 8] = 0xff00 >> i;
+
+	for (i = 0; i < 16; i++)
+		dest->s6_addr[i] = src->s6_addr[i] & mask.s6_addr[i];
+}
+
