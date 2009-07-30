@@ -1,4 +1,4 @@
-/*	$OpenBSD: parser.c,v 1.40 2007/03/07 11:55:54 henning Exp $ */
+/*	$OpenBSD: parser.c,v 1.46 2007/05/31 04:21:43 claudio Exp $ */
 
 /*
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
@@ -76,6 +76,7 @@ static const struct token t_neighbor_modifiers[];
 static const struct token t_show_as[];
 static const struct token t_show_prefix[];
 static const struct token t_show_ip[];
+static const struct token t_show_community[];
 static const struct token t_network[];
 static const struct token t_network_show[];
 static const struct token t_prefix[];
@@ -138,11 +139,12 @@ static const struct token t_show_rib[] = {
 	{ ASTYPE,	"transit-as",	AS_TRANSIT,	t_show_as},
 	{ ASTYPE,	"peer-as",	AS_PEER,	t_show_as},
 	{ ASTYPE,	"empty-as",	AS_EMPTY,	t_show_rib},
+	{ KEYWORD,	"community",	NONE,		t_show_community},
 	{ FLAG,		"detail",	F_CTL_DETAIL,	t_show_rib},
 	{ FLAG,		"in",		F_CTL_ADJ_IN,	t_show_rib},
 	{ FLAG,		"out",		F_CTL_ADJ_OUT,	t_show_rib},
 	{ KEYWORD,	"neighbor",	NONE,		t_show_rib_neigh},
-	{ KEYWORD,	"summary",	SHOW_SUMMARY,	NULL},
+	{ KEYWORD,	"summary",	SHOW_SUMMARY,	t_show_summary},
 	{ KEYWORD,	"memory",	SHOW_RIB_MEM,	NULL},
 	{ FAMILY,	"",		NONE,		t_show_rib},
 	{ PREFIX,	"",		NONE,		t_show_prefix},
@@ -166,6 +168,7 @@ static const struct token t_show_neighbor_modifiers[] = {
 	{ NOTOKEN,	"",		NONE,			NULL},
 	{ KEYWORD,	"timers",	SHOW_NEIGHBOR_TIMERS,	NULL},
 	{ KEYWORD,	"messages",	SHOW_NEIGHBOR,		NULL},
+	{ KEYWORD,	"terse",	SHOW_NEIGHBOR_TERSE,	NULL},
 	{ ENDTOKEN,	"",		NONE,			NULL}
 };
 
@@ -203,6 +206,11 @@ static const struct token t_show_prefix[] = {
 
 static const struct token t_show_ip[] = {
 	{ KEYWORD,	"bgp",		SHOW_RIB,	t_show_rib},
+	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_show_community[] = {
+	{ COMMUNITY,	"",		NONE,		t_show_rib},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -297,7 +305,7 @@ void			 show_valid_args(const struct token []);
 int			 parse_addr(const char *, struct bgpd_addr *);
 int			 parse_prefix(const char *, struct bgpd_addr *,
 			     u_int8_t *);
-int			 parse_asnum(const char *, u_int16_t *);
+int			 parse_asnum(const char *, u_int32_t *);
 int			 parse_number(const char *, struct parse_result *,
 			     enum token_type);
 int			 getcommunity(const char *);
@@ -311,6 +319,8 @@ parse(int argc, char *argv[])
 	const struct token	*match;
 
 	bzero(&res, sizeof(res));
+	res.community.as = COMMUNITY_UNSET;
+	res.community.type = COMMUNITY_UNSET;
 	TAILQ_INIT(&res.set);
 
 	while (argc >= 0) {
@@ -631,19 +641,33 @@ parse_prefix(const char *word, struct bgpd_addr *addr, u_int8_t *prefixlen)
 }
 
 int
-parse_asnum(const char *word, u_int16_t *asnum)
+parse_asnum(const char *word, u_int32_t *asnum)
 {
 	const char	*errstr;
-	u_int16_t	 uval;
+	char		*dot;
+	u_int32_t	 uval, uvalh = 0;
 
 	if (word == NULL)
 		return (0);
 
-	uval = strtonum(word, 0, USHRT_MAX - 1, &errstr);
-	if (errstr)
-		errx(1, "AS number is %s: %s", errstr, word);
+	if (strlen(word) < 1 || word[0] < '0' || word[0] > '9')
+		return (0);
 
-	*asnum = uval;
+	if ((dot = strchr(word,'.')) != NULL) {
+		*dot++ = '\0';
+		uvalh = strtonum(word, 0, USHRT_MAX, &errstr);
+		if (errstr)
+			errx(1, "AS number is %s: %s", errstr, word);
+		uval = strtonum(dot, 0, USHRT_MAX, &errstr);
+		if (errstr)
+			errx(1, "AS number is %s: %s", errstr, word);
+	} else {
+		uval = strtonum(word, 0, USHRT_MAX - 1, &errstr);
+		if (errstr)
+			errx(1, "AS number is %s: %s", errstr, word);
+	}
+
+	*asnum = uval | (uvalh << 16);
 	return (1);
 }
 
@@ -775,6 +799,9 @@ done:
 	fs->type = ACTION_SET_COMMUNITY;
 	fs->action.community.as = as;
 	fs->action.community.type = type;
+
+	r->community.as = as;
+	r->community.type = type;
 
 	TAILQ_INSERT_TAIL(&r->set, fs, entry);
 	return (1);
