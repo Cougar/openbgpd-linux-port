@@ -442,6 +442,7 @@ session_main(struct bgpd_config *config, struct peer *cpeers,
 			    nextaction < timeout)
 				timeout = nextaction;
 
+#if 0
 			/* XXX carp demotion */
 			if (p->demoted && p->state == STATE_ESTABLISHED) {
 				if (time(NULL) - p->stats.last_updown >=
@@ -452,7 +453,7 @@ session_main(struct bgpd_config *config, struct peer *cpeers,
 					timeout = p->stats.last_updown +
 					    INTERVAL_HOLD_DEMOTED - time(NULL);
 			}
-
+#endif
 			/* are we waiting for a write? */
 			events = POLLIN;
 			if (p->wbuf.queued > 0 || p->state == STATE_CONNECT)
