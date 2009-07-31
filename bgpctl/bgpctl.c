@@ -1,4 +1,4 @@
-/*	$OpenBSD: bgpctl.c,v 1.138 2009/02/01 17:21:21 sobrado Exp $ */
+/*	$OpenBSD: bgpctl.c,v 1.142 2009/06/06 06:33:15 eric Exp $ */
 
 /*
  * Copyright (c) 2003 Henning Brauer <henning@openbsd.org>
@@ -179,8 +179,7 @@ main(int argc, char *argv[])
 			    -1 ||
 			    imsg_add(msg, &res->af, sizeof(res->af)) == -1)
 				errx(1, "imsg_add failure");
-			if (imsg_close(ibuf, msg) < 0)
-				errx(1, "imsg_close error");
+			imsg_close(ibuf, msg);
 		} else
 			imsg_compose(ibuf, IMSG_CTL_KROUTE_ADDR, 0, 0, -1,
 			    &res->addr, sizeof(res->addr));
@@ -225,6 +224,7 @@ main(int argc, char *argv[])
 		}
 		memcpy(&ribreq.neighbor, &neighbor,
 		    sizeof(ribreq.neighbor));
+		strlcpy(ribreq.rib, res->rib, sizeof(ribreq.rib));
 		ribreq.af = res->af;
 		ribreq.flags = res->flags;
 		imsg_compose(ibuf, type, 0, 0, -1, &ribreq, sizeof(ribreq));
@@ -294,8 +294,11 @@ main(int argc, char *argv[])
 		done = 1;
 		break;
 	case NETWORK_SHOW:
+		bzero(&ribreq, sizeof(ribreq));
+		ribreq.af = res->af;
+		strlcpy(ribreq.rib, res->rib, sizeof(ribreq.rib));
 		imsg_compose(ibuf, IMSG_CTL_SHOW_NETWORK, 0, 0, -1,
-		    &res->af, sizeof(res->af));
+		    &ribreq, sizeof(ribreq));
 		show_network_head();
 		break;
 	}
@@ -1259,6 +1262,9 @@ show_rib_memory_msg(struct imsg *imsg)
 			printf("%10lld IPv6 network entries using "
 			    "%s of memory\n", (long long)stats.pt6_cnt,
 			    fmt_mem(stats.pt6_cnt * sizeof(struct pt_entry6)));
+		printf("%10lld rib entries using %s of memory\n",
+		    (long long)stats.rib_cnt, fmt_mem(stats.rib_cnt *
+		    sizeof(struct rib_entry)));
 		printf("%10lld prefix entries using %s of memory\n",
 		    (long long)stats.prefix_cnt, fmt_mem(stats.prefix_cnt *
 		    sizeof(struct prefix)));
@@ -1280,6 +1286,7 @@ show_rib_memory_msg(struct imsg *imsg)
 		    stats.pt4_cnt * sizeof(struct pt_entry4) +
 		    stats.pt6_cnt * sizeof(struct pt_entry6) +
 		    stats.prefix_cnt * sizeof(struct prefix) +
+		    stats.rib_cnt * sizeof(struct rib_entry) +
 		    stats.path_cnt * sizeof(struct rde_aspath) +
 		    stats.aspath_size + stats.attr_cnt * sizeof(struct attr) +
 		    stats.attr_data));
